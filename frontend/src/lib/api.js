@@ -26,5 +26,10 @@ export const schedulerList = () => api.get('/api/scheduler/list').then(r=>r.data
 export const schedulerCreate = (payload) => api.post('/api/scheduler/schedule', payload).then(r=>r.data)
 export const compliance = (jobId) => api.get(`/api/compliance/${jobId}`).then(r=>r.data)
 export const freeInfo = () => api.get('/api/free-info').then(r=>r.data)
+export const enterprisePower = () => api.get('/api/enterprise/power').then(r=>r.data)
+export const enterpriseTier = () => api.get('/api/enterprise/tier').then(r=>r.data)
+export const enterpriseFeatures = () => api.get('/api/enterprise/features').then(r=>r.data)
+export const enterpriseIncrease = () => api.get('/api/enterprise/power/how-to-increase').then(r=>r.data)
+export const remediationPr = (jobId) => api.get(`/api/remediation/pr/${jobId}`).then(r=>r.data)
 
 export default api

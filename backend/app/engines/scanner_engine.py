@@ -386,6 +386,40 @@ async def deep_scan_job(scan_req: ScanRequest, result: ScanResult):
             except Exception as ae:
                 await emit(result.job_id, result.current_stage, 44, f"API discovery skipped: {ae}")
 
+            # --- ENTERPRISE: Cloud Posture (free core, enterprise deep) ---
+            try:
+                from .cloud_posture_engine import scan_cloud_posture
+                cloud_res = scan_cloud_posture(result)
+                for cv in cloud_res["vulns"]:
+                    result.vulnerabilities.append(cv)
+                    await emit(result.job_id, result.current_stage, 44, f"Cloud: {cv.title}")
+                if cloud_res["findings"]:
+                    result.findings.append(ScanFinding(category="cloud", key="cloud_checks", value=len(cloud_res["findings"])))
+            except Exception as ce:
+                await emit(result.job_id, result.current_stage, 44, f"Cloud scan skipped: {ce}")
+
+            # --- ENTERPRISE: Container/K8s (free core) ---
+            try:
+                from .container_engine import scan_container
+                cont_res = scan_container(result)
+                for cv in cont_res["vulns"]:
+                    result.vulnerabilities.append(cv)
+                    await emit(result.job_id, result.current_stage, 44, f"Container: {cv.title}")
+            except Exception as ce:
+                await emit(result.job_id, result.current_stage, 44, f"Container scan skipped: {ce}")
+
+            # --- ENTERPRISE: Supply Chain SCA (free) ---
+            try:
+                from .supply_chain_engine import scan_supply_chain
+                sca_res = scan_supply_chain(result, body)
+                for sv in sca_res["vulns"]:
+                    result.vulnerabilities.append(sv)
+                    await emit(result.job_id, result.current_stage, 44, f"SCA: {sv.title}")
+                if sca_res["components"]:
+                    result.findings.append(ScanFinding(category="supply_chain", key="components", value=len(sca_res["components"])))
+            except Exception as ce:
+                await emit(result.job_id, result.current_stage, 44, f"SCA skipped: {ce}")
+
             # TLS
             result.current_stage = "TLS & Security Posture"
             await emit(result.job_id, result.current_stage, 45, "Analyzing TLS configuration ...")

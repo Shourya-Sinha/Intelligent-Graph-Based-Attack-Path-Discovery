@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Radar, Share2, ShieldAlert, FileBarChart, Brain, Zap, Globe, Layers, Package, Clock, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, Radar, Share2, ShieldAlert, FileBarChart, Brain, Zap, Globe, Layers, Package, Clock, ShieldCheck, Crown } from 'lucide-react'
 
 const items = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -11,9 +11,10 @@ const items = [
   { to: "/assets", label: "Assets & SBOM", icon: Package },
   { to: "/threat-intel", label: "Threat Intel (FREE)", icon: Globe },
   { to: "/compliance", label: "Compliance", icon: ShieldCheck },
-  { to: "/ai", label: "FREE AI Chat", icon: Brain },
+  { to: "/ai", label: "AI Chat (FREE↔Ent)", icon: Brain },
   { to: "/reports", label: "Reports & Export", icon: FileBarChart },
   { to: "/scheduler", label: "Scheduler", icon: Clock },
+  { to: "/enterprise", label: "Enterprise Power", icon: Crown },
 ]
 
 export default function Sidebar(){
@@ -23,7 +24,7 @@ export default function Sidebar(){
         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-400 to-indigo-600 grid place-items-center font-black">AG</div>
         <div>
           <div className="font-extrabold leading-none">AttackGraph</div>
-          <div className="text-[11px] tracking-widest text-slate-400">ADVANCED v2.1 • FREE AI</div>
+          <div className="text-[11px] tracking-widest text-slate-400">ADVANCED v2.2 • FREE↔ENTERPRISE</div>
         </div>
         <div className="ml-auto w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
       </div>
@@ -34,12 +35,12 @@ export default function Sidebar(){
           </NavLink>
         ))}
         <div className="mt-3 p-3 rounded-xl bg-gradient-to-br from-emerald-500/20 to-sky-500/20 border border-emerald-500/20">
-          <div className="text-xs font-bold flex items-center gap-2"><Zap size={14} className="text-emerald-400"/> FREE AI • $0</div>
-          <div className="text-xs text-slate-300 mt-1">No OpenAI • Offline local • Optional free HF (no payment). 100% free.</div>
+          <div className="text-xs font-bold flex items-center gap-2"><Zap size={14} className="text-emerald-400"/> FREE by default • $0</div>
+          <div className="text-xs text-slate-300 mt-1">No keys = $0 offline local + Cloud/Container/SBOM. 100% free.</div>
         </div>
-        <div className="mt-2 p-3 rounded-xl bg-gradient-to-br from-sky-500/20 to-indigo-500/20 border border-sky-500/20">
-          <div className="text-xs font-bold flex items-center gap-2"><Zap size={14} className="text-sky-400"/> Realtime Engine</div>
-          <div className="text-xs text-slate-300 mt-1">WebSocket • Graph centrality • Monte Carlo • FAIR • Anomaly ML</div>
+        <div className="mt-2 p-3 rounded-xl bg-gradient-to-br from-amber-500/15 to-violet-500/15 border border-amber-500/20">
+          <div className="text-xs font-bold flex items-center gap-2"><Crown size={14} className="text-amber-400"/> Enterprise Power</div>
+          <div className="text-xs text-slate-300 mt-1">Set OPENAI/ANTHROPIC/GEMINI keys → GPT-4o/Claude/Gemini • 200 bulk • 10k nodes. Meter gauge 0-100.</div>
         </div>
       </nav>
       <div className="text-[11px] text-slate-500 text-center">For authorized pentest & SOC — 100% free</div>

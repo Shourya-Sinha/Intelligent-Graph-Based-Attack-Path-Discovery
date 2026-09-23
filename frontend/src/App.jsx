@@ -12,11 +12,12 @@ import Assets from './pages/Assets'
 import BulkScan from './pages/BulkScan'
 import Compliance from './pages/Compliance'
 import Scheduler from './pages/Scheduler'
+import EnterprisePower from './pages/EnterprisePower'
 import FreeAIChat from './components/ai/FreeAIChat'
 import { useState } from 'react'
 
 function AIPage(){
-  return <div className="glass rounded-xl p-6">🤖 <b>FREE AI</b> — 100% free, offline, no OpenAI. Use the floating chat (bottom-right) or go to Findings → Explain. API: <code>/api/ai/chat</code> and <code>/api/ai/explain</code> — both free, no key, no payment.</div>
+  return <div className="glass rounded-xl p-6">🤖 <b>FREE↔ENTERPRISE AI</b> — Default $0 free, offline, no OpenAI. If you set <code>OPENAI_API_KEY</code> / <code>ANTHROPIC_API_KEY</code> / <code>GEMINI_API_KEY</code> → auto-unlocks Enterprise (GPT-4o/Claude 3.5/Gemini 1.5). No key → stays 100% FREE. Use floating chat (bottom-right) or Findings → Explain. Enterprise meter: <code>/enterprise</code>.</div>
 }
 
 export default function App(){
@@ -41,9 +42,10 @@ export default function App(){
               <Route path="/ai" element={<AIPage/>}/>
               <Route path="/reports" element={<Reports/>}/>
               <Route path="/scheduler" element={<Scheduler/>}/>
+              <Route path="/enterprise" element={<EnterprisePower/>}/>
             </Routes>
           </main>
-          <footer className="text-center text-[11px] text-slate-500 py-4">© 2026 Intelligent Graph-Based Attack Path Discovery • Advanced v2.1 • FREE AI ($0) • WebSocket Realtime • For authorized use only</footer>
+          <footer className="text-center text-[11px] text-slate-500 py-4">© 2026 Intelligent Graph-Based Attack Path Discovery • Advanced v2.2 • Dual-Mode FREE↔ENTERPRISE • FREE $0 offline • Enterprise GPT-4o/Claude/Gemini • WebSocket Realtime</footer>
         </div>
       </div>
       <FreeAIChat jobId={chatJobId}/>
