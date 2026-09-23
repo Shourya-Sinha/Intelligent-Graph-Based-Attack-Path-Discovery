@@ -19,6 +19,8 @@ from .engines.risk_engine import run_risk_analysis
 from .engines.ai_engine import ai_explain, ai_prioritize, free_ai_chat
 from .engines.enterprise_ai_engine import enterprise_ai_explain
 from .engines.enterprise_power_engine import calculate_power, get_enterprise_features
+from .engines.engine_registry import ENGINES, list_engines
+from .engines.power_control_engine import get_presets, get_global_config, set_global_config, describe_selection, effective_engines_for_job
 from .engines.export_engine import export_json, export_csv, export_html, export_pdf, export_sarif
 from .engines.threat_intel_engine import enrich_cve_free, get_recent_threat_feed, mitre_lookup, epss_free_score
 from .engines.anomaly_engine import combined_health
@@ -26,9 +28,9 @@ from .engines.asset_engine import build_inventory, sbom_free
 from .config import get_active_tier, is_enterprise_unlocked
 
 app = FastAPI(
-    title="Intelligent Graph-Based Attack Path Discovery - Enterprise Power (FREE by default, PAID unlocks)",
-    version="2.2.0",
-    description="Dual-mode: FREE (100% free, offline, no keys) vs ENTERPRISE (paid advance intelligence if keys provided). Real-time graph, risk, threat intel, power meter, auto-remediation. By default FREE."
+    title="Intelligent Graph-Based Attack Path Discovery - Powerhouse 45 Engines (FREE by default, PAID unlocks)",
+    version="2.3.0",
+    description="Powerhouse: 45 tick-selectable engines + presets + per-task power sliders + powerhouse powerhouse mode. Dual-mode FREE($0) vs ENTERPRISE(GPT-4o/Claude). Real-time graph, risk, threat intel, 0-100 power meter."
 )
 
 app.add_middleware(
@@ -43,15 +45,19 @@ app.add_middleware(
 async def root():
     tier = get_active_tier()
     ent = is_enterprise_unlocked()
+    cfg = get_global_config()
     return {
         "service": "Intelligent Graph-Based Attack Path Discovery",
-        "version": "2.2.0",
+        "version": "2.3.0 — Powerhouse 45 Engines",
         "mode": "ENTERPRISE" if ent else "FREE (default, $0)",
         "tier": tier,
         "enterprise_unlocked": ent,
-        "ai": "FREE by default (local, $0) — ENTERPRISE unlocks GPT-4o/Claude/Gemini if keys provided. See /api/enterprise/power",
-        "features": ["deep-scan","graph-engine","risk-engine-v2","free-ai-chat","enterprise-ai","threat-intel-free","anomaly-ml-free","asset-inventory","bulk-scan","scheduler","compliance","cloud-posture","container","supply-chain","power-meter","websocket","export"],
-        "power": calculate_power(len(store.scans), 14)["total_power"],
+        "engines": len(ENGINES),
+        "active_engines": len(cfg["selected"]),
+        "preset": cfg["preset"],
+        "ai": "FREE by default (local, $0) — ENTERPRISE unlocks GPT-4o/Claude/Gemini if keys provided. See /api/power/* and /api/enterprise/power",
+        "features": ["45-engines","powerhouse","power-presets","per-task-sliders","deep-scan","graph-engine","risk-engine-v2","free-ai-chat","enterprise-ai","threat-intel-free","anomaly-ml-free","asset-inventory","bulk-scan","scheduler","compliance","cloud-posture","container","supply-chain","power-meter","websocket","export"],
+        "power": calculate_power(len(store.scans), len(cfg["selected"]))["total_power"],
         "status": "operational",
         "free": True,
         "enterprise": ent
@@ -80,10 +86,52 @@ async def health():
     tier = get_active_tier()
     return {"status":"ok", "ts": datetime.utcnow().isoformat(), "active_scans": len(store.scans), "active_graphs": len(store.graphs), "scheduler_jobs": len(scheduler.jobs), "tier": tier, "enterprise": is_enterprise_unlocked(), "free": True}
 
+# ========== POWERHOUSE — POWER CONTROL (NEW) ==========
+@app.get("/api/power/engines")
+async def power_engines():
+    return {"engines": list_engines(), "total": len(ENGINES), "categories": list(set(e["category"] for e in ENGINES)), "free": True, "tier": get_active_tier(), "enterprise_unlocked": is_enterprise_unlocked()}
+
+@app.get("/api/power/presets")
+async def power_presets():
+    return {"presets": get_presets(), "total_engines": len(ENGINES), "free": True}
+
+@app.get("/api/power/config")
+async def power_config():
+    cfg = get_global_config()
+    desc = describe_selection(cfg["selected"])
+    return {"config": cfg, "describe": desc, "engines_total": len(ENGINES), "free": True, "tier": get_active_tier()}
+
+class PowerConfigRequest(BaseModel):
+    preset: str | None = None
+    selected: List[str] | None = None
+    concurrency: int | None = None
+    depth: int | None = None
+    task_power: dict | None = None
+    powerhouse: bool | None = None
+
+@app.post("/api/power/config")
+async def power_config_set(req: PowerConfigRequest):
+    if req.preset and req.preset not in ["eco","balanced","maximum","turbo","overdrive","custom"]:
+        raise HTTPException(400, "preset must be eco/balanced/maximum/turbo/overdrive")
+    cfg = set_global_config(preset=req.preset, selected=req.selected, concurrency=req.concurrency, depth=req.depth, task_power=req.task_power, powerhouse=req.powerhouse)
+    desc = describe_selection(cfg["selected"])
+    # push to websocket global
+    await manager.send_to_channel("global", {"type":"power_config_changed", "config": cfg, "describe": desc})
+    return {"config": cfg, "describe": desc, "power": calculate_power(len(store.scans), len(cfg["selected"])), "free": True}
+
+@app.post("/api/power/describe")
+async def power_describe(req: PowerConfigRequest):
+    sel = req.selected or get_global_config()["selected"]
+    desc = describe_selection(sel)
+    return desc
+
 # ========== ENTERPRISE POWER ==========
 @app.get("/api/enterprise/power")
 async def enterprise_power():
-    data = calculate_power(len(store.scans), 14)
+    cfg = get_global_config()
+    data = calculate_power(len(store.scans), len(cfg["selected"]))
+    data["powerhouse"] = cfg
+    data["engines_total"] = len(ENGINES)
     return data
 
 @app.get("/api/enterprise/tier")
@@ -98,8 +146,9 @@ async def enterprise_features():
 
 @app.get("/api/enterprise/power/how-to-increase")
 async def how_to_increase():
-    p = calculate_power(len(store.scans), 14)
-    return {"recommendations": p["recommendations"], "scale": p["scale"], "free": True}
+    cfg = get_global_config()
+    p = calculate_power(len(store.scans), len(cfg["selected"]))
+    return {"recommendations": p["recommendations"], "scale": p["scale"], "free": True, "engines_total": len(ENGINES), "active": len(cfg["selected"])}
 
 # ---------- Scan ----------
 @app.post("/api/scan/start")
@@ -115,6 +164,9 @@ class BulkScanRequest(BaseModel):
     targets: List[str]
     mode: str = "advance"
     depth: int = 2
+    power_preset: str | None = None
+    powerhouse: bool | None = None
+    engines: List[str] | None = None
 
 @app.post("/api/scan/bulk")
 async def bulk_scan(req: BulkScanRequest, background_tasks: BackgroundTasks):
@@ -126,12 +178,12 @@ async def bulk_scan(req: BulkScanRequest, background_tasks: BackgroundTasks):
     jobs = []
     for t in req.targets:
         job_id = f"SCAN-{uuid.uuid4().hex[:8].upper()}"
-        scan_req = ScanRequest(target=t, mode=req.mode, depth=req.depth)
+        scan_req = ScanRequest(target=t, mode=req.mode, depth=req.depth, power_preset=req.power_preset, powerhouse=req.powerhouse, engines=req.engines)
         result = ScanResult(job_id=job_id, target=t, mode=req.mode, status="queued", progress=0, current_stage="Queued")
         store.set_scan(job_id, {"request": scan_req, "result": result, "graph": None, "risk": None})
         background_tasks.add_task(run_scan_task, job_id, scan_req)
         jobs.append(job_id)
-    return {"jobs": jobs, "count": len(jobs), "tier": tier, "enterprise": is_ent, "free": True}
+    return {"jobs": jobs, "count": len(jobs), "tier": tier, "enterprise": is_ent, "free": True, "power_preset": req.power_preset or get_global_config()["preset"]}
 
 async def run_scan_task(job_id: str, req: ScanRequest):
     entry = store.get_scan(job_id)

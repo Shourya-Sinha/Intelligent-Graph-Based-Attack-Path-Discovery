@@ -32,6 +32,11 @@ class ScanRequest(BaseModel):
     custom_headers: Optional[Dict[str, str]] = None
     auth_cookies: Optional[str] = None
     wordlist_size: Literal["small","medium","large"] = "medium"
+    # Powerhouse controls — user selects how much power to use
+    engines: Optional[List[str]] = Field(default=None, description="Selected engine ids (44 total). Null → use global power config")
+    power_preset: Optional[str] = Field(default=None, description="Preset: eco/balanced/maximum/turbo/overdrive")
+    powerhouse: Optional[bool] = Field(default=None, description="If true, enable all engines @ max power")
+    task_power: Optional[Dict[str, int]] = Field(default=None, description="Per-task power 0-100 for scanner/graph/risk/ai")
 
 class Severity(str, Enum):
     CRITICAL = "critical"

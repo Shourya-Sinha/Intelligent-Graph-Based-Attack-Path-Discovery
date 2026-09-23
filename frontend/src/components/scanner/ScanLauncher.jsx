@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Rocket, Shield, ScanEye, Globe } from 'lucide-react'
-import { startScan } from '../../lib/api'
+import { Rocket, Shield, ScanEye, Globe, Zap, Crown } from 'lucide-react'
+import { startScan, powerPresets, powerConfig } from '../../lib/api'
+import { Link } from 'react-router-dom'
 
 export default function ScanLauncher({ onStarted }){
   const [target,setTarget]=useState("https://example.com")
@@ -9,6 +10,12 @@ export default function ScanLauncher({ onStarted }){
   const [depth,setDepth]=useState(2)
   const [loading,setLoading]=useState(false)
   const [opts,setOpts]=useState({subdomain:true, port:true, dir:true, vuln:true, graph:true, ai:true})
+  const [preset,setPreset]=useState(null)
+  const [presets,setPresets]=useState(null)
+  const [cfg,setCfg]=useState(null)
+  const [powerhouse,setPowerhouse]=useState(false)
+  useEffect(()=>{ powerPresets().then(setPresets).catch(()=>{}); powerConfig().then(setCfg).catch(()=>{}) },[])
+  useEffect(()=>{ if(cfg && !preset) setPreset(cfg.config?.preset||'balanced') },[cfg])
 
   const launch = async () => {
     setLoading(true)
@@ -20,7 +27,9 @@ export default function ScanLauncher({ onStarted }){
         enable_dir_bruteforce: opts.dir,
         enable_vuln_scan: opts.vuln,
         enable_graph_build: opts.graph,
-        enable_ai_analysis: opts.ai
+        enable_ai_analysis: opts.ai,
+        power_preset: preset,
+        powerhouse
       }
       const res = await startScan(payload)
       onStarted?.(res.job_id)
@@ -50,6 +59,20 @@ export default function ScanLauncher({ onStarted }){
             <span className="text-xs text-slate-400">Depth</span>
             <input type="range" min={1} max={5} value={depth} onChange={e=>setDepth(parseInt(e.target.value))} className="flex-1 accent-sky-500"/>
             <span className="mono text-xs bg-slate-800 rounded px-2 py-1">{depth}</span>
+          </div>
+          <div className="mt-3 p-2.5 rounded-xl bg-gradient-to-br from-sky-500/10 to-violet-500/10 border border-sky-500/20">
+            <div className="text-xs font-black flex items-center gap-2"><Zap size={12} className="text-sky-400"/> Power for this scan</div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {presets && Object.keys(presets.presets).map(k=>{
+                const v=presets.presets[k]
+                return <button key={k} onClick={()=>setPreset(k)} className={`px-2.5 py-1 rounded-full text-xs font-bold border ${preset===k ? 'bg-sky-500 text-white border-sky-400' : 'glass border-slate-700'}`}>{k} • {v.power_pct}%</button>
+              })}
+            </div>
+            <label className="flex items-center gap-2 mt-2 text-xs font-bold cursor-pointer">
+              <input type="checkbox" checked={powerhouse} onChange={e=>setPowerhouse(e.target.checked)} className="accent-sky-500"/>
+              <span className="flex items-center gap-1"><Crown size={12} className="text-amber-400"/> Powerhouse — all {cfg? cfg.config.selected.length : '45'} engines @ max <span className="text-slate-400">(tick for max strength)</span></span>
+            </label>
+            <div className="text-[11px] text-slate-400 mt-1">Global preset <b>{cfg?.config?.preset}</b> • {cfg?.config?.selected?.length} engines • <Link to="/power" className="text-sky-400 underline">Customize powerhouse → Power Control</Link></div>
           </div>
         </div>
         <div className="glass rounded-xl p-3">

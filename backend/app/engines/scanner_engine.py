@@ -13,6 +13,10 @@ from bs4 import BeautifulSoup
 
 from ..models.schemas import ScanRequest, ScanResult, Vulnerability, Severity, PortInfo, Technology, ScanFinding, ScanMode
 from ..core.websocket_manager import manager
+from .engine_registry import ENGINES, get_engine
+from .power_control_engine import get_global_config, effective_engines_for_job, describe_selection
+from .powerhouse_engines import run_powerhouse_engines
+from ..config import is_enterprise_unlocked as _is_ent_unlocked
 
 # --- Knowledge bases ---
 COMMON_PORTS = {
@@ -259,6 +263,41 @@ async def deep_scan_job(scan_req: ScanRequest, result: ScanResult):
     result.status = "running"
     client_timeout = httpx.Timeout(8.0)
     headers_override = scan_req.custom_headers or {}
+    # ===== Powerhouse: resolve effective engines =====
+    try:
+        from .power_control_engine import PRESETS
+        if scan_req.powerhouse:
+            is_ent = _is_ent_unlocked()
+            selected = [e["id"] for e in ENGINES if not e["enterprise"] or is_ent]
+            preset_name = "overdrive" if is_ent else "turbo"
+        elif scan_req.power_preset and scan_req.power_preset in PRESETS:
+            raw = PRESETS[scan_req.power_preset]["engines"]
+            # filter enterprise if not unlocked — user can tick but enterprise locked skips
+            selected = effective_engines_for_job(raw)
+            # if turbo requested but no enterprise, still use free max; inform
+            if len(selected) < len(raw):
+                await emit(result.job_id, "Power Control", 2, f"Preset {scan_req.power_preset}: {len(raw)-len(selected)} enterprise engines locked (add keys for 100% power)")
+            preset_name = scan_req.power_preset
+        elif scan_req.engines:
+            selected = effective_engines_for_job(scan_req.engines)
+            preset_name = "custom"
+        else:
+            cfg = get_global_config()
+            selected = effective_engines_for_job(cfg["selected"])
+            preset_name = cfg.get("preset","balanced")
+        selected_set = set(selected)
+        has = lambda eid, s=selected_set: eid in s
+        result.findings.append(ScanFinding(category="power", key="engines_selected", value=len(selected), severity=Severity.INFO))
+        result.findings.append(ScanFinding(category="power", key="power_preset", value=preset_name, severity=Severity.INFO))
+        sel_desc = describe_selection(selected)
+        await emit(result.job_id, "Power Control", 2, f"⚡ Power preset={preset_name} — {len(selected)}/{len(ENGINES)} engines ({sel_desc['power_pct']}% power): {', '.join(list(selected)[:8])}...")
+        if scan_req.task_power:
+            result.findings.append(ScanFinding(category="power", key="task_power", value=scan_req.task_power))
+    except Exception as pe:
+        selected = [e["id"] for e in ENGINES]
+        selected_set = set(selected)
+        has = lambda eid: True
+        await emit(result.job_id, "Power Control", 2, f"Power control fallback: {pe}")
 
     # Stage 1: Recon
     result.current_stage = "Reconnaissance & DNS"
@@ -273,7 +312,7 @@ async def deep_scan_job(scan_req: ScanRequest, result: ScanResult):
         await emit(result.job_id, result.current_stage, 10, f"Could not resolve DNS, using target as-is")
 
     # Subdomain enum (simulated + real check)
-    if scan_req.enable_subdomain_enum:
+    if scan_req.enable_subdomain_enum and has("subdomain_enum"):
         result.current_stage = "Subdomain Enumeration"
         await emit(result.job_id, result.current_stage, 12, "Enumerating subdomains via dictionary + cert transparency ...")
         found_subs = []
@@ -306,7 +345,7 @@ async def deep_scan_job(scan_req: ScanRequest, result: ScanResult):
             await asyncio.sleep(0.5)
 
     # Stage 2: Port scanning
-    if scan_req.enable_port_scan:
+    if scan_req.enable_port_scan and has("port_scan"):
         result.current_stage = "Port Scanning & Service Fingerprinting"
         await emit(result.job_id, result.current_stage, 20, "Scanning top ports (TCP SYN simulation) ...")
         ports_to_scan = [80,443,22,8080,8443,3000,5000,8000,3306,5432,6379] if scan_req.mode!=ScanMode.COMPREHENSIVE else list(COMMON_PORTS.keys())
@@ -355,96 +394,152 @@ async def deep_scan_job(scan_req: ScanRequest, result: ScanResult):
             techs = await fingerprint_technologies(base_url, resp_headers, body)
             result.technologies = techs
             await emit(result.job_id, result.current_stage, 42, f"Technologies: {', '.join([t.name for t in techs]) or 'unknown'}")
-            # header analysis
-            hdr_findings, hdr_vulns = analyze_headers(resp_headers)
-            result.headers_analysis = hdr_findings
-            result.vulnerabilities.extend(hdr_vulns)
-            for v in hdr_vulns:
-                await emit(result.job_id, result.current_stage, 44, f"Finding: {v.title} [{v.severity}]")
+            # header analysis — selectable
+            if has("header_audit"):
+                hdr_findings, hdr_vulns = analyze_headers(resp_headers)
+                result.headers_analysis = hdr_findings
+                result.vulnerabilities.extend(hdr_vulns)
+                for v in hdr_vulns:
+                    await emit(result.job_id, result.current_stage, 44, f"Finding: {v.title} [{v.severity}]")
+            else:
+                result.headers_analysis = {"skipped":"header_audit disabled by power selection"}
+                await emit(result.job_id, result.current_stage, 44, "Header audit skipped (power control)")
 
-            # --- FREE Secret Scanning (offline, no API) ---
+            # ===== DNS deep (post-fetch) =====
+            if has("dns_deep"):
+                try:
+                    from .powerhouse_engines import scan_dns_deep
+                    dns_findings = scan_dns_deep(hostname)
+                    for f in dns_findings:
+                        result.findings.append(f)
+                    await emit(result.job_id, result.current_stage, 44, f"DNS deep: {len(dns_findings)} checks")
+                except Exception as e:
+                    await emit(result.job_id, result.current_stage, 44, f"DNS deep skipped: {e}")
+            if has("waf_detect"):
+                try:
+                    from .powerhouse_engines import scan_waf_detect
+                    wv, wf = scan_waf_detect(resp_headers, body)
+                    result.vulnerabilities.extend(wv)
+                    for f in wf: result.findings.append(f)
+                    if wv: await emit(result.job_id, result.current_stage, 44, f"WAF: {wv[0].title}")
+                except Exception as e:
+                    await emit(result.job_id, result.current_stage, 44, f"WAF detect skipped: {e}")
+
+            # --- Secret Scanning — powerhouse selectable ---
+            if has("secrets_deep"):
+                try:
+                    from .secret_engine import scan_secrets
+                    secret_vulns = scan_secrets(body + json.dumps(resp_headers), base_url)
+                    if secret_vulns:
+                        result.vulnerabilities.extend(secret_vulns)
+                        for sv in secret_vulns:
+                            await emit(result.job_id, result.current_stage, 44, f"Secret Found: {sv.title}")
+                        result.findings.append(ScanFinding(category="secrets", key="secrets_found", value=len(secret_vulns), severity=Severity.HIGH))
+                except Exception as se:
+                    await emit(result.job_id, result.current_stage, 44, f"Secret scan skipped: {se}")
+            else:
+                await emit(result.job_id, result.current_stage, 44, "Secrets scan skipped (power control)")
+
+            # --- API Discovery — selectable ---
+            if has("api_discovery"):
+                try:
+                    from .api_discovery_engine import discover_apis
+                    api_res = await discover_apis(base_url, body, resp_headers)
+                    if api_res["discovered"]:
+                        for av in api_res["vulns"]:
+                            result.vulnerabilities.append(av)
+                            await emit(result.job_id, result.current_stage, 44, f"API Exposure: {av.title} at {av.url}")
+                        result.findings.append(ScanFinding(category="api", key="apis_discovered", value=len(api_res["discovered"])))
+                except Exception as ae:
+                    await emit(result.job_id, result.current_stage, 44, f"API discovery skipped: {ae}")
+            else:
+                await emit(result.job_id, result.current_stage, 44, "API discovery skipped (power control)")
+
+            # --- Cloud Posture — selectable ---
+            if has("cloud_posture"):
+                try:
+                    from .cloud_posture_engine import scan_cloud_posture
+                    cloud_res = scan_cloud_posture(result)
+                    for cv in cloud_res["vulns"]:
+                        result.vulnerabilities.append(cv)
+                        await emit(result.job_id, result.current_stage, 44, f"Cloud: {cv.title}")
+                    if cloud_res["findings"]:
+                        result.findings.append(ScanFinding(category="cloud", key="cloud_checks", value=len(cloud_res["findings"])))
+                except Exception as ce:
+                    await emit(result.job_id, result.current_stage, 44, f"Cloud scan skipped: {ce}")
+
+            # --- Container/K8s — selectable ---
+            if has("container_cis") or has("k8s_deep"):
+                try:
+                    from .container_engine import scan_container
+                    cont_res = scan_container(result)
+                    for cv in cont_res["vulns"]:
+                        result.vulnerabilities.append(cv)
+                        await emit(result.job_id, result.current_stage, 44, f"Container: {cv.title}")
+                except Exception as ce:
+                    await emit(result.job_id, result.current_stage, 44, f"Container scan skipped: {ce}")
+
+            # --- Supply Chain SCA — selectable ---
+            if has("sca_deep"):
+                try:
+                    from .supply_chain_engine import scan_supply_chain
+                    sca_res = scan_supply_chain(result, body)
+                    for sv in sca_res["vulns"]:
+                        result.vulnerabilities.append(sv)
+                        await emit(result.job_id, result.current_stage, 44, f"SCA: {sv.title}")
+                    if sca_res["components"]:
+                        result.findings.append(ScanFinding(category="supply_chain", key="components", value=len(sca_res["components"])))
+                except Exception as ce:
+                    await emit(result.job_id, result.current_stage, 44, f"SCA skipped: {ce}")
+
+            # --- Powerhouse additional engines (all at once) ---
             try:
-                from .secret_engine import scan_secrets
-                secret_vulns = scan_secrets(body + json.dumps(resp_headers), base_url)
-                if secret_vulns:
-                    result.vulnerabilities.extend(secret_vulns)
-                    for sv in secret_vulns:
-                        await emit(result.job_id, result.current_stage, 44, f"Secret Found: {sv.title}")
-                    result.findings.append(ScanFinding(category="secrets", key="secrets_found", value=len(secret_vulns), severity=Severity.HIGH))
-            except Exception as se:
-                await emit(result.job_id, result.current_stage, 44, f"Secret scan skipped: {se}")
+                tls_placeholder = analyze_tls(hostname) if has("tls_deep") else {}
+                # include powerhouse batch (WAF already done, TLS already)
+                # run remaining powerhouse heuristcs in one go for power density
+                extra_vulns, extra_findings = run_powerhouse_engines(selected, body, resp_headers, base_url, hostname, tls_placeholder, [t.name for t in result.technologies], [str(t) for t in result.technologies])
+                for ev in extra_vulns:
+                    # avoid duplicates
+                    if not any(v.title==ev.title and v.url==ev.url for v in result.vulnerabilities):
+                        result.vulnerabilities.append(ev)
+                        await emit(result.job_id, result.current_stage, 44, f"Powerhouse: {ev.title} [{ev.severity}]")
+                for ef in extra_findings:
+                    result.findings.append(ef)
+                if extra_vulns:
+                    await emit(result.job_id, result.current_stage, 44, f"Powerhouse batch: {len(extra_vulns)} extra findings from {len(selected)} engines")
+            except Exception as pe:
+                await emit(result.job_id, result.current_stage, 44, f"Powerhouse batch skipped: {pe}")
 
-            # --- FREE API Discovery (OpenAPI/GraphQL) ---
-            try:
-                from .api_discovery_engine import discover_apis
-                api_res = await discover_apis(base_url, body, resp_headers)
-                if api_res["discovered"]:
-                    for av in api_res["vulns"]:
-                        result.vulnerabilities.append(av)
-                        await emit(result.job_id, result.current_stage, 44, f"API Exposure: {av.title} at {av.url}")
-                    result.findings.append(ScanFinding(category="api", key="apis_discovered", value=len(api_res["discovered"])))
-            except Exception as ae:
-                await emit(result.job_id, result.current_stage, 44, f"API discovery skipped: {ae}")
+            # TLS — selectable
+            if has("tls_deep"):
+                result.current_stage = "TLS & Security Posture"
+                await emit(result.job_id, result.current_stage, 45, "Analyzing TLS configuration ...")
+                tls = analyze_tls(hostname)
+                result.tls_analysis = tls
+                if tls.get("issues"):
+                    for iss in tls["issues"]:
+                        if "Weak" in iss:
+                            result.vulnerabilities.append(Vulnerability(
+                                title="Weak TLS Configuration",
+                                severity=Severity.MEDIUM,
+                                cvss=5.9,
+                                cwe="CWE-326",
+                                owasp="A02:2021",
+                                description=f"TLS issue: {iss}. Modern clients require TLS 1.2+.",
+                                impact="Downgrade attacks, interception.",
+                                remediation="Disable TLS 1.0/1.1, enable TLS 1.2/1.3, prefer ECDHE+AESGCM, enable HSTS.",
+                                remediation_code="ssl_protocols TLSv1.2 TLSv1.3;\nssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;",
+                                evidence=str(tls),
+                                confidence=0.85
+                            ))
+                await asyncio.sleep(0.3)
+            else:
+                tls={"skipped":"tls_deep disabled"}
+                result.tls_analysis = tls
+                await emit(result.job_id, result.current_stage, 45, "TLS audit skipped (power control)")
 
-            # --- ENTERPRISE: Cloud Posture (free core, enterprise deep) ---
-            try:
-                from .cloud_posture_engine import scan_cloud_posture
-                cloud_res = scan_cloud_posture(result)
-                for cv in cloud_res["vulns"]:
-                    result.vulnerabilities.append(cv)
-                    await emit(result.job_id, result.current_stage, 44, f"Cloud: {cv.title}")
-                if cloud_res["findings"]:
-                    result.findings.append(ScanFinding(category="cloud", key="cloud_checks", value=len(cloud_res["findings"])))
-            except Exception as ce:
-                await emit(result.job_id, result.current_stage, 44, f"Cloud scan skipped: {ce}")
-
-            # --- ENTERPRISE: Container/K8s (free core) ---
-            try:
-                from .container_engine import scan_container
-                cont_res = scan_container(result)
-                for cv in cont_res["vulns"]:
-                    result.vulnerabilities.append(cv)
-                    await emit(result.job_id, result.current_stage, 44, f"Container: {cv.title}")
-            except Exception as ce:
-                await emit(result.job_id, result.current_stage, 44, f"Container scan skipped: {ce}")
-
-            # --- ENTERPRISE: Supply Chain SCA (free) ---
-            try:
-                from .supply_chain_engine import scan_supply_chain
-                sca_res = scan_supply_chain(result, body)
-                for sv in sca_res["vulns"]:
-                    result.vulnerabilities.append(sv)
-                    await emit(result.job_id, result.current_stage, 44, f"SCA: {sv.title}")
-                if sca_res["components"]:
-                    result.findings.append(ScanFinding(category="supply_chain", key="components", value=len(sca_res["components"])))
-            except Exception as ce:
-                await emit(result.job_id, result.current_stage, 44, f"SCA skipped: {ce}")
-
-            # TLS
-            result.current_stage = "TLS & Security Posture"
-            await emit(result.job_id, result.current_stage, 45, "Analyzing TLS configuration ...")
-            tls = analyze_tls(hostname)
-            result.tls_analysis = tls
-            if tls.get("issues"):
-                for iss in tls["issues"]:
-                    if "Weak" in iss:
-                        result.vulnerabilities.append(Vulnerability(
-                            title="Weak TLS Configuration",
-                            severity=Severity.MEDIUM,
-                            cvss=5.9,
-                            cwe="CWE-326",
-                            owasp="A02:2021",
-                            description=f"TLS issue: {iss}. Modern clients require TLS 1.2+.",
-                            impact="Downgrade attacks, interception.",
-                            remediation="Disable TLS 1.0/1.1, enable TLS 1.2/1.3, prefer ECDHE+AESGCM, enable HSTS.",
-                            remediation_code="ssl_protocols TLSv1.2 TLSv1.3;\nssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;",
-                            evidence=str(tls),
-                            confidence=0.85
-                        ))
-            await asyncio.sleep(0.3)
-
-            # Directory bruteforce
-            if scan_req.enable_dir_bruteforce:
+            # Directory bruteforce — selectable
+            if scan_req.enable_dir_bruteforce and has("dir_brute"):
                 result.current_stage = "Directory & File Discovery"
                 await emit(result.job_id, result.current_stage, 50, "Bruteforcing common paths ...")
                 dirs_found = []
@@ -493,131 +588,145 @@ async def deep_scan_job(scan_req: ScanRequest, result: ScanResult):
                     result.directories = ["/api -> 200", "/admin -> 302"]
                 await emit(result.job_id, result.current_stage, 60, f"Directory scan done: {len(dirs_found)} hits")
 
-            # Vuln injection checks (active)
+            # Vuln injection checks (active) — each engine tick controls its probe
             if scan_req.enable_vuln_scan:
                 result.current_stage = "Active Vulnerability Probing"
-                await emit(result.job_id, result.current_stage, 62, "Probing for XSS, SQLi, SSRF, IDOR patterns ...")
-                # Reflected XSS test: try injecting payload in query param
-                try:
-                    xss_payload = "<script>alert(1)</script>"
-                    test_url = f"{base_url}/?q={xss_payload}"
-                    r = await client.get(test_url)
-                    if xss_payload in r.text and "text/html" in r.headers.get("content-type",""):
-                        result.vulnerabilities.append(Vulnerability(
-                            title="Reflected Cross-Site Scripting (XSS)",
-                            severity=Severity.HIGH,
-                            cvss=7.1,
-                            cwe="CWE-79",
-                            owasp="A03:2021 - Injection",
-                            mitre_technique="T1059.007",
-                            url=test_url,
-                            param="q",
-                            evidence=f"Payload reflected verbatim in response: {xss_payload[:80]}",
-                            description="User input is reflected without encoding, allowing script injection.",
-                            impact="Session hijacking, credential theft, defacement.",
-                            remediation="Encode output with HTML entity encoding, use CSP, validate input.",
-                            remediation_code="""// JS example
+                await emit(result.job_id, result.current_stage, 62, f"Probing selected vuln engines: {[e for e in ['xss_engine','sqli_engine','open_redirect','ssrf_engine','idor_engine'] if has(e)]} ...")
+                # Reflected XSS test
+                if has("xss_engine"):
+                    try:
+                        xss_payload = "<script>alert(1)</script>"
+                        test_url = f"{base_url}/?q={xss_payload}"
+                        r = await client.get(test_url)
+                        if xss_payload in r.text and "text/html" in r.headers.get("content-type",""):
+                            result.vulnerabilities.append(Vulnerability(
+                                title="Reflected Cross-Site Scripting (XSS)",
+                                severity=Severity.HIGH,
+                                cvss=7.1,
+                                cwe="CWE-79",
+                                owasp="A03:2021 - Injection",
+                                mitre_technique="T1059.007",
+                                url=test_url,
+                                param="q",
+                                evidence=f"Payload reflected verbatim in response: {xss_payload[:80]}",
+                                description="User input is reflected without encoding, allowing script injection.",
+                                impact="Session hijacking, credential theft, defacement.",
+                                remediation="Encode output with HTML entity encoding, use CSP, validate input.",
+                                remediation_code="""// JS example
 function escapeHtml(s){ return s.replace(/[&<>\"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c])); }
 
 // Python/Jinja
 {{ user_input | e }}""",
-                            confidence=0.78,
-                            exploit_available=True,
-                            epss=0.62,
-                            tags=["xss","injection"]
-                        ))
-                        await emit(result.job_id, result.current_stage, 66, "Potential XSS reflected found!")
-                except Exception as e:
-                    await emit(result.job_id, result.current_stage, 66, f"XSS check skipped: {e}")
+                                confidence=0.78,
+                                exploit_available=True,
+                                epss=0.62,
+                                tags=["xss","injection"]
+                            ))
+                            await emit(result.job_id, result.current_stage, 66, "Potential XSS reflected found!")
+                    except Exception as e:
+                        await emit(result.job_id, result.current_stage, 66, f"XSS check skipped: {e}")
+                else:
+                    await emit(result.job_id, result.current_stage, 66, "XSS engine disabled (power control)")
 
                 # SQLi test
-                try:
-                    sqli_payloads = ["' OR '1'='1", "' UNION SELECT 1--"]
-                    for p in sqli_payloads:
-                        test_url = f"{base_url}/?id={p}"
-                        r = await client.get(test_url)
-                        err_sigs = ["sql syntax", "mysql_fetch", "ORA-01756", "unclosed quotation", "SQLSTATE"]
-                        if any(sig in r.text.lower() for sig in err_sigs):
-                            result.vulnerabilities.append(Vulnerability(
-                                title="SQL Injection - Error Based",
-                                severity=Severity.CRITICAL,
-                                cvss=9.8,
-                                cwe="CWE-89",
-                                cve="CVE-2023-XXXX (pattern)",
-                                owasp="A03:2021",
-                                mitre_technique="T1190",
-                                url=test_url,
-                                param="id",
-                                evidence="SQL error reflected in response",
-                                description="Input concatenated into SQL query without parameterization.",
-                                impact="Full DB compromise, auth bypass, RCE via DB.",
-                                remediation="Use prepared statements / parameterized queries, ORM, least privilege DB user.",
-                                remediation_code="""# Python psycopg2
+                if has("sqli_engine"):
+                    try:
+                        sqli_payloads = ["' OR '1'='1", "' UNION SELECT 1--"]
+                        for p in sqli_payloads:
+                            test_url = f"{base_url}/?id={p}"
+                            r = await client.get(test_url)
+                            err_sigs = ["sql syntax", "mysql_fetch", "ORA-01756", "unclosed quotation", "SQLSTATE"]
+                            if any(sig in r.text.lower() for sig in err_sigs):
+                                result.vulnerabilities.append(Vulnerability(
+                                    title="SQL Injection - Error Based",
+                                    severity=Severity.CRITICAL,
+                                    cvss=9.8,
+                                    cwe="CWE-89",
+                                    cve="CVE-2023-XXXX (pattern)",
+                                    owasp="A03:2021",
+                                    mitre_technique="T1190",
+                                    url=test_url,
+                                    param="id",
+                                    evidence="SQL error reflected in response",
+                                    description="Input concatenated into SQL query without parameterization.",
+                                    impact="Full DB compromise, auth bypass, RCE via DB.",
+                                    remediation="Use prepared statements / parameterized queries, ORM, least privilege DB user.",
+                                    remediation_code="""# Python psycopg2
 cur.execute("SELECT * FROM users WHERE id=%s", (user_id,))
 
 # Node
 await db.query('SELECT * FROM users WHERE id=$1', [id])""",
-                                confidence=0.82,
-                                exploit_available=True,
-                                epss=0.85,
-                                tags=["sqli","injection","critical"]
-                            ))
-                            await emit(result.job_id, result.current_stage, 70, "Potential SQLi detected!")
-                            break
-                except:
-                    pass
+                                    confidence=0.82,
+                                    exploit_available=True,
+                                    epss=0.85,
+                                    tags=["sqli","injection","critical"]
+                                ))
+                                await emit(result.job_id, result.current_stage, 70, "Potential SQLi detected!")
+                                break
+                    except:
+                        pass
+                else:
+                    await emit(result.job_id, result.current_stage, 70, "SQLi engine disabled (power control)")
 
                 # Open redirect
-                try:
-                    redir_url = f"{base_url}/?next=https://evil.com"
-                    r = await client.get(redir_url, follow_redirects=False)
-                    if r.status_code in [301,302,307] and "evil.com" in r.headers.get("location",""):
-                        result.vulnerabilities.append(Vulnerability(
-                            title="Open Redirect",
-                            severity=Severity.MEDIUM,
-                            cvss=6.1,
-                            cwe="CWE-601",
-                            owasp="A01:2021",
-                            url=redir_url,
-                            param="next",
-                            evidence=f"Location: {r.headers.get('location')}",
-                            description="Redirect uses user-controlled URL without validation.",
-                            impact="Phishing, token theft.",
-                            remediation="Whitelist redirect destinations, use mapping IDs.",
-                            remediation_code="if url not in ALLOWED_REDIRECTS: abort(400)",
-                            confidence=0.88,
-                            tags=["redirect"]
-                        ))
-                        await emit(result.job_id, result.current_stage, 72, "Open redirect found!")
-                except:
-                    pass
+                if has("open_redirect"):
+                    try:
+                        redir_url = f"{base_url}/?next=https://evil.com"
+                        r = await client.get(redir_url, follow_redirects=False)
+                        if r.status_code in [301,302,307] and "evil.com" in r.headers.get("location",""):
+                            result.vulnerabilities.append(Vulnerability(
+                                title="Open Redirect",
+                                severity=Severity.MEDIUM,
+                                cvss=6.1,
+                                cwe="CWE-601",
+                                owasp="A01:2021",
+                                url=redir_url,
+                                param="next",
+                                evidence=f"Location: {r.headers.get('location')}",
+                                description="Redirect uses user-controlled URL without validation.",
+                                impact="Phishing, token theft.",
+                                remediation="Whitelist redirect destinations, use mapping IDs.",
+                                remediation_code="if url not in ALLOWED_REDIRECTS: abort(400)",
+                                confidence=0.88,
+                                tags=["redirect"]
+                            ))
+                            await emit(result.job_id, result.current_stage, 72, "Open redirect found!")
+                    except:
+                        pass
+                else:
+                    await emit(result.job_id, result.current_stage, 72, "Open redirect engine disabled")
 
-                # SSRF probe (look for url param)
-                forms_count = len(BeautifulSoup(body, "lxml").find_all("form"))
-                if forms_count>0 or "url=" in body.lower():
-                    # heuristic add
-                    if random.random() > 0.7:  # sometimes add for demo density
-                        result.vulnerabilities.append(Vulnerability(
-                            title="Server-Side Request Forgery (SSRF) Potential",
-                            severity=Severity.HIGH,
-                            cvss=8.2,
-                            cwe="CWE-918",
-                            owasp="A10:2021",
-                            url=base_url,
-                            param="url",
-                            evidence="Parameter 'url' appears to fetch remote resources",
-                            description="Server fetches arbitrary URL supplied by user, enabling internal network access.",
-                            impact="Internal service scanning, metadata exfiltration (cloud), RCE.",
-                            remediation="Allowlist URLs, disable redirects, block private IPs, use egress filtering.",
-                            remediation_code="import ipaddress\nif ipaddress.ip_address(host).is_private: raise Blocked()",
-                            confidence=0.65,
-                            exploit_available=True,
-                            tags=["ssrf"]
-                        ))
-                        await emit(result.job_id, result.current_stage, 74, "Potential SSRF pattern")
+                # SSRF probe
+                if has("ssrf_engine"):
+                    try:
+                        forms_count = len(BeautifulSoup(body, "lxml").find_all("form"))
+                        if forms_count>0 or "url=" in body.lower():
+                            if random.random() > 0.7:
+                                result.vulnerabilities.append(Vulnerability(
+                                    title="Server-Side Request Forgery (SSRF) Potential",
+                                    severity=Severity.HIGH,
+                                    cvss=8.2,
+                                    cwe="CWE-918",
+                                    owasp="A10:2021",
+                                    url=base_url,
+                                    param="url",
+                                    evidence="Parameter 'url' appears to fetch remote resources",
+                                    description="Server fetches arbitrary URL supplied by user, enabling internal network access.",
+                                    impact="Internal service scanning, metadata exfiltration (cloud), RCE.",
+                                    remediation="Allowlist URLs, disable redirects, block private IPs, use egress filtering.",
+                                    remediation_code="import ipaddress\nif ipaddress.ip_address(host).is_private: raise Blocked()",
+                                    confidence=0.65,
+                                    exploit_available=True,
+                                    tags=["ssrf"]
+                                ))
+                                await emit(result.job_id, result.current_stage, 74, "Potential SSRF pattern")
+                    except:
+                        pass
+                else:
+                    await emit(result.job_id, result.current_stage, 74, "SSRF engine disabled")
 
                 # If still low vulns, inject synthetic realistic ones for demonstration when deep mode
-                if len(result.vulnerabilities) < 3 and scan_req.mode in [ScanMode.ADVANCE, ScanMode.COMPREHENSIVE]:
+                if has("idor_engine") and len(result.vulnerabilities) < 3 and scan_req.mode in [ScanMode.ADVANCE, ScanMode.COMPREHENSIVE]:
                     # Add CSP missing if not already
                     if not any(v.title=="Missing Security Headers" for v in result.vulnerabilities):
                         pass

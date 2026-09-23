@@ -31,5 +31,10 @@ export const enterpriseTier = () => api.get('/api/enterprise/tier').then(r=>r.da
 export const enterpriseFeatures = () => api.get('/api/enterprise/features').then(r=>r.data)
 export const enterpriseIncrease = () => api.get('/api/enterprise/power/how-to-increase').then(r=>r.data)
 export const remediationPr = (jobId) => api.get(`/api/remediation/pr/${jobId}`).then(r=>r.data)
+export const powerEngines = () => api.get('/api/power/engines').then(r=>r.data)
+export const powerPresets = () => api.get('/api/power/presets').then(r=>r.data)
+export const powerConfig = () => api.get('/api/power/config').then(r=>r.data)
+export const powerConfigSet = (payload) => api.post('/api/power/config', payload).then(r=>r.data)
+export const powerDescribe = (payload) => api.post('/api/power/describe', payload).then(r=>r.data)
 
 export default api

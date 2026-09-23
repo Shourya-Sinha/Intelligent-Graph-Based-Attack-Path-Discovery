@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Radar, Share2, ShieldAlert, FileBarChart, Brain, Zap, Globe, Layers, Package, Clock, ShieldCheck, Crown } from 'lucide-react'
+import { LayoutDashboard, Radar, Share2, ShieldAlert, FileBarChart, Brain, Zap, Globe, Layers, Package, Clock, ShieldCheck, Crown, Sliders } from 'lucide-react'
 
 const items = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -14,6 +14,7 @@ const items = [
   { to: "/ai", label: "AI Chat (FREE↔Ent)", icon: Brain },
   { to: "/reports", label: "Reports & Export", icon: FileBarChart },
   { to: "/scheduler", label: "Scheduler", icon: Clock },
+  { to: "/power", label: "Powerhouse Control", icon: Sliders },
   { to: "/enterprise", label: "Enterprise Power", icon: Crown },
 ]
 
@@ -24,7 +25,7 @@ export default function Sidebar(){
         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-400 to-indigo-600 grid place-items-center font-black">AG</div>
         <div>
           <div className="font-extrabold leading-none">AttackGraph</div>
-          <div className="text-[11px] tracking-widest text-slate-400">ADVANCED v2.2 • FREE↔ENTERPRISE</div>
+          <div className="text-[11px] tracking-widest text-slate-400">POWERHOUSE 45 • FREE↔ENT</div>
         </div>
         <div className="ml-auto w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
       </div>
@@ -38,9 +39,13 @@ export default function Sidebar(){
           <div className="text-xs font-bold flex items-center gap-2"><Zap size={14} className="text-emerald-400"/> FREE by default • $0</div>
           <div className="text-xs text-slate-300 mt-1">No keys = $0 offline local + Cloud/Container/SBOM. 100% free.</div>
         </div>
+        <div className="mt-2 p-3 rounded-xl bg-gradient-to-br from-sky-500/15 to-violet-500/15 border border-sky-500/20">
+          <div className="text-xs font-bold flex items-center gap-2"><Sliders size={14} className="text-sky-400"/> Powerhouse 45 Engines</div>
+          <div className="text-xs text-slate-300 mt-1">Tick engines, presets Eco→Overdrive, per-task 0-100 sliders. More engines = more power.</div>
+        </div>
         <div className="mt-2 p-3 rounded-xl bg-gradient-to-br from-amber-500/15 to-violet-500/15 border border-amber-500/20">
-          <div className="text-xs font-bold flex items-center gap-2"><Crown size={14} className="text-amber-400"/> Enterprise Power</div>
-          <div className="text-xs text-slate-300 mt-1">Set OPENAI/ANTHROPIC/GEMINI keys → GPT-4o/Claude/Gemini • 200 bulk • 10k nodes. Meter gauge 0-100.</div>
+          <div className="text-xs font-bold flex items-center gap-2"><Crown size={14} className="text-amber-400"/> Enterprise Overdrive</div>
+          <div className="text-xs text-slate-300 mt-1">Set OPENAI/ANTHROPIC/GEMINI → Turbo 44 engines + GPU → 100/100.</div>
         </div>
       </nav>
       <div className="text-[11px] text-slate-500 text-center">For authorized pentest & SOC — 100% free</div>
