@@ -15,7 +15,9 @@ import Scheduler from './pages/Scheduler'
 import EnterprisePower from './pages/EnterprisePower'
 import PowerControl from './pages/PowerControl'
 import Autonomous from './pages/Autonomous'
+import Hunting from './pages/Hunting'
 import FreeAIChat from './components/ai/FreeAIChat'
+import ErrorBoundary from './components/ui/ErrorBoundary'
 import { useState } from 'react'
 
 function AIPage(){
@@ -31,25 +33,28 @@ export default function App(){
         <div className="flex-1 min-w-0 flex flex-col">
           <Topbar/>
           <main className="max-w-[1400px] mx-auto w-full p-4 md:p-6 flex-1">
-            <Routes>
-              <Route path="/" element={<Dashboard/>}/>
-              <Route path="/scanner" element={<Scanner/>}/>
-              <Route path="/bulk" element={<BulkScan/>}/>
-              <Route path="/graph" element={<GraphExplorer/>}/>
-              <Route path="/risk" element={<RiskAnalysis/>}/>
-              <Route path="/findings" element={<Findings/>}/>
-              <Route path="/assets" element={<Assets/>}/>
-              <Route path="/threat-intel" element={<ThreatIntel/>}/>
-              <Route path="/compliance" element={<Compliance/>}/>
-              <Route path="/ai" element={<AIPage/>}/>
-              <Route path="/reports" element={<Reports/>}/>
-              <Route path="/scheduler" element={<Scheduler/>}/>
-              <Route path="/power" element={<PowerControl/>}/>
-              <Route path="/autonomous" element={<Autonomous/>}/>
-              <Route path="/enterprise" element={<EnterprisePower/>}/>
-            </Routes>
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/" element={<Dashboard/>}/>
+                <Route path="/scanner" element={<Scanner/>}/>
+                <Route path="/bulk" element={<BulkScan/>}/>
+                <Route path="/graph" element={<GraphExplorer/>}/>
+                <Route path="/risk" element={<RiskAnalysis/>}/>
+                <Route path="/findings" element={<Findings/>}/>
+                <Route path="/assets" element={<Assets/>}/>
+                <Route path="/threat-intel" element={<ThreatIntel/>}/>
+                <Route path="/compliance" element={<Compliance/>}/>
+                <Route path="/ai" element={<AIPage/>}/>
+                <Route path="/reports" element={<Reports/>}/>
+                <Route path="/scheduler" element={<Scheduler/>}/>
+                <Route path="/power" element={<PowerControl/>}/>
+                <Route path="/autonomous" element={<Autonomous/>}/>
+                <Route path="/hunting" element={<Hunting/>}/>
+                <Route path="/enterprise" element={<EnterprisePower/>}/>
+              </Routes>
+            </ErrorBoundary>
           </main>
-          <footer className="text-center text-[11px] text-slate-500 py-4">© 2026 Intelligent Graph-Based Attack Path Discovery • Powerhouse v2.4 — 112 Engines + Autonomous • FREE↔ENTERPRISE • Powerhouse Control 0-100 • WebSocket Realtime + Tune</footer>
+          <footer className="text-center text-[11px] text-slate-500 py-4">© 2026 Intelligent Graph-Based Attack Path Discovery • Powerhouse v2.5 — 121 Engines + Autonomous BOT + Hunting • FREE↔ENTERPRISE • Persistence SQLite • WebSocket Realtime + Tune + RateLimit</footer>
         </div>
       </div>
       <FreeAIChat jobId={chatJobId}/>

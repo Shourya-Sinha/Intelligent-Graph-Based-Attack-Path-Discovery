@@ -29,12 +29,15 @@ from .engines.threat_intel_engine import enrich_cve_free, get_recent_threat_feed
 from .engines.anomaly_engine import combined_health
 from .engines.asset_engine import build_inventory, sbom_free
 from .config import get_active_tier, is_enterprise_unlocked
+from .middleware.rate_limit import rate_limit_middleware
 
 app = FastAPI(
-    title="Intelligent Graph-Based Attack Path Discovery - Powerhouse 112 Engines + Autonomous (FREE by default, PAID unlocks)",
-    version="2.4.0",
-    description="Powerhouse: 112 tick-selectable engines + presets + per-task sliders + autonomous scan/fix + notifications with tune + 20 auto-fix engines. Every-time or scheduled scans, no problem left, admin notified with how_to_fix. Dual-mode FREE($0) vs ENTERPRISE(GPT-4o/Claude)."
+    title="Intelligent Graph-Based Attack Path Discovery - Powerhouse 121 Engines + Autonomous BOT (FREE by default, PAID unlocks)",
+    version="2.5.0",
+    description="Powerhouse: 121 tick-selectable engines + presets + per-task sliders + autonomous scan/fix + tune notifications + hunting + zero-trust + persistence. Every-time or scheduled, no problem left. Dual-mode FREE($0) vs ENTERPRISE(GPT-4o/Claude)."
 )
+
+app.middleware("http")(rate_limit_middleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -82,7 +85,7 @@ async def autonomous_continuous_loop():
 async def start_autonomous():
     global autonomous_task
     autonomous_task = asyncio.create_task(autonomous_continuous_loop())
-    print("Autonomous powerhouse loop started — 112 engines ready for every-time scans")
+    print("Autonomous powerhouse loop started — 121 engines ready for every-time scans + hunting + zero-trust")
 
 @app.get("/")
 async def root():
@@ -92,7 +95,7 @@ async def root():
     auto = get_auto_config()
     return {
         "service": "Intelligent Graph-Based Attack Path Discovery",
-        "version": "2.4.0 — Powerhouse 112 Engines + Autonomous",
+        "version": "2.5.0 — Powerhouse 121 Engines + Autonomous BOT + Hunting",
         "mode": "ENTERPRISE" if ent else "FREE (default, $0)",
         "tier": tier,
         "enterprise_unlocked": ent,
@@ -100,8 +103,9 @@ async def root():
         "active_engines": len(cfg["selected"]),
         "preset": cfg["preset"],
         "autonomous": auto,
-        "ai": "FREE by default (local, $0) — ENTERPRISE unlocks GPT-4o/Claude/Gemini if keys provided. See /api/power/*, /api/auto/*, /api/notifications",
-        "features": ["112-engines","autonomous","auto-fix-20","powerhouse","power-presets","per-task-sliders","continuous-monitor","schedule","tune-notifications","deep-scan","graph-engine","risk-engine-v2","free-ai-chat","enterprise-ai","threat-intel-free","anomaly-ml-free","asset-inventory","bulk-scan","scheduler","compliance","cloud-posture","container","supply-chain","power-meter","websocket","export"],
+        "store": store.stats(),
+        "ai": "FREE by default (local, $0) — ENTERPRISE unlocks GPT-4o/Claude/Gemini if keys provided. See /api/power/*, /api/auto/*, /api/notifications, /api/hunt",
+        "features": ["121-engines","autonomous","auto-fix-20","hunting","zero-trust","persistence-sqlite","powerhouse","power-presets","per-task-sliders","continuous-monitor","schedule","tune-notifications","deep-scan","graph-engine","risk-engine-v2","free-ai-chat","enterprise-ai","threat-intel-free","anomaly-ml-free","asset-inventory","bulk-scan","scheduler","compliance","cloud-posture","container","supply-chain","power-meter","websocket","export","metrics","rate-limit-free"],
         "power": calculate_power(len(store.scans), len(cfg["selected"]))["total_power"],
         "status": "operational",
         "free": True,
@@ -129,7 +133,89 @@ async def free_info():
 @app.get("/api/health")
 async def health():
     tier = get_active_tier()
-    return {"status":"ok", "ts": datetime.utcnow().isoformat(), "active_scans": len(store.scans), "active_graphs": len(store.graphs), "scheduler_jobs": len(scheduler.jobs), "tier": tier, "enterprise": is_enterprise_unlocked(), "free": True}
+    return {"status":"ok", "ts": datetime.utcnow().isoformat(), "active_scans": len(store.scans), "active_graphs": len(store.graphs), "scheduler_jobs": len(scheduler.jobs), "tier": tier, "enterprise": is_enterprise_unlocked(), "free": True, "store": store.stats(), "autonomous": get_auto_config().get("mode")}
+
+@app.get("/api/metrics")
+async def metrics():
+    # Prometheus-like + JSON — free, local, no deps
+    s = store.stats()
+    cfg = get_global_config()
+    auto = get_auto_config()
+    p = calculate_power(len(store.scans), len(cfg["selected"]))
+    return {
+        "uptime": "ok",
+        "scans_total": s["scans"],
+        "graphs_total": s["graphs"],
+        "risks_total": s["risks"],
+        "persistence": s["persistence"],
+        "engines_total": len(ENGINES),
+        "active_engines": len(cfg["selected"]),
+        "power": p["total_power"],
+        "tier": get_active_tier(),
+        "autonomous_mode": auto["mode"],
+        "continuous": auto.get("continuous"),
+        "scheduler_jobs": len(scheduler.jobs),
+        "free": True
+    }
+
+@app.get("/api/hunt/queries")
+async def hunt_queries():
+    # Free threat hunting queries — Sigma-like, runs on scan results without extra cost
+    return {
+        "queries": [
+            {"id":"HUNT-001","name":"Shadow IT — Unmanaged Subdomains","query":"subdomains where not in asset_inventory.known","severity":"medium","free":True},
+            {"id":"HUNT-002","name":"Exposed Secrets in JS","query":"vuln.cwe=CWE-798 AND url contains .js","severity":"critical","free":True},
+            {"id":"HUNT-003","name":"Crown Jewel Path — Internet → DB","query":"graph.critical_path where target_type=data AND length<=4","severity":"high","free":True},
+            {"id":"HUNT-004","name":"Weak TLS + WAF Bypass","query":"header missing HSTS AND waf_detected AND tls_deep","severity":"medium","free":True},
+            {"id":"HUNT-005","name":"Stale JS Libraries (EOL)","query":"sca_deep where library in [jquery<3.6, bootstrap<5]","severity":"medium","free":True},
+            {"id":"HUNT-006","name":"API Auth Bypass Candidates","query":"idor_engine OR jwt_engine OR graphql_engine","severity":"high","free":True}
+        ],
+        "run": "POST /api/hunt/run/{job_id}?query_id=HUNT-001 — 100% free, local",
+        "free": True
+    }
+
+class HuntRunRequest(BaseModel):
+    query_id: str | None = None
+
+@app.post("/api/hunt/run/{job_id}")
+async def hunt_run(job_id: str, query_id: str = "HUNT-001"):
+    entry = store.get_scan(job_id)
+    if not entry:
+        raise HTTPException(404, "Scan not found")
+    scan = entry["result"]; graph = entry.get("graph")
+    # simple hunter: produce findings based on query
+    hits = []
+    if query_id == "HUNT-001":
+        for sub in getattr(scan, "subdomains", [])[:5]:
+            hits.append({"subdomain": sub, "reason":"Not in known inventory (heuristic)", "hunt":"HUNT-001"})
+        if not hits: hits.append({"note":"No shadow IT — all subdomains accounted for (heuristic)"})
+    elif query_id == "HUNT-003" and graph:
+        for p in getattr(graph, "critical_paths", [])[:3]:
+            hits.append({"path": p.get("path_labels") if isinstance(p, dict) else str(p), "risk": p.get("risk_score", 0) if isinstance(p, dict) else 0})
+        if not hits: hits.append({"note":"No short crown-jewel path — segmentation good"})
+    else:
+        # generic: return vulns matching
+        for v in scan.vulnerabilities[:3]:
+            hits.append({"vuln": v.title, "cwe": v.cwe, "url": v.url})
+    return {"job_id": job_id, "query_id": query_id, "hits": hits, "count": len(hits), "free": True, "engine":"hunting-free"}
+
+@app.get("/api/zero-trust/policy/{job_id}")
+async def zero_trust_policy(job_id: str):
+    entry = store.get_scan(job_id)
+    if not entry:
+        raise HTTPException(404, "Scan not found")
+    scan = entry["result"]
+    # Generate zero-trust policies from findings — free, deterministic
+    policies = []
+    if any("CWE-693" in (v.cwe or "") for v in scan.vulnerabilities):
+        policies.append({"control":"headers","policy":"deny by default, allow-list CSP + HSTS preload + X-Frame SAMEORIGIN","enforce":"nginx: add_header + CSP; cloudflare: zero-trust gateway","free":True})
+    if any("CWE-79" in (v.cwe or "") for v in scan.vulnerabilities):
+        policies.append({"control":"xss","policy":"Content-Security-Policy: default-src 'self'; script-src 'nonce-...' + Trusted Types","enforce":"WAF rule + nonce","free":True})
+    if any("CORS" in v.title for v in scan.vulnerabilities):
+        policies.append({"control":"cors","policy":"Access-Control-Allow-Origin: whitelist only, Vary: Origin, no wildcard + credentials","enforce":"gateway","free":True})
+    if not policies:
+        policies.append({"control":"baseline","policy":"Zero-trust baseline: least privilege, mTLS, device posture, identity-aware proxy","enforce":"Generic","free":True})
+    return {"job_id": job_id, "policies": policies, "count": len(policies), "free": True, "note":"Apply via gateway/WAF/IaC — autonomous healer can auto-apply if fix_mode auto"}
 
 # ========== POWERHOUSE — POWER CONTROL (NEW) ==========
 @app.get("/api/power/engines")

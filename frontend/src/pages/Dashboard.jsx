@@ -31,11 +31,12 @@ export default function Dashboard(){
           <div className="relative">
             <div className="inline-flex items-center gap-2 text-xs tracking-widest text-sky-300 font-bold"><Zap size={14}/> ADVANCED MODE • REAL-WORLD READY</div>
             <h1 className="text-3xl md:text-4xl font-black mt-2 leading-tight">Intelligent Graph-Based<br/><span className="bg-gradient-to-r from-sky-400 to-violet-400 bg-clip-text text-transparent">Attack Path Discovery</span></h1>
-            <p className="text-slate-400 mt-3 max-w-2xl text-sm md:text-[15px]">Deep web & network scanner + Custom Risk Engine (FAIR + Monte Carlo + Centrality) + Attack Graph (NetworkX / Dijkstra) + Free Local AI + WebSocket Live • Build once, run continuously.</p>
+            <p className="text-slate-400 mt-3 max-w-2xl text-sm md:text-[15px]">121-engine powerhouse (Recon→Auto-Fix) + Custom Risk Engine (FAIR + Monte Carlo) + Attack Graph (Dijkstra + PageRank) + Autonomous BOT (every-time & scheduled) + Tune Notifications + Free Local AI • No single problem left.</p>
             <div className="flex flex-wrap gap-3 mt-6">
               <Link to="/scanner" className="bg-white text-slate-900 font-extrabold rounded-full px-5 py-2.5 inline-flex items-center gap-2">Start Advanced Scan <ArrowRight size={16}/></Link>
+              <Link to="/autonomous" className="bg-violet-500 text-white font-extrabold rounded-full px-5 py-2.5 inline-flex items-center gap-2">Autonomous BOT <Zap size={14}/></Link>
               <Link to="/graph" className="glass rounded-full px-5 py-2.5 font-bold inline-flex items-center gap-2"><Share2 size={16}/> Explore Graph</Link>
-              <span className="hidden md:inline-flex items-center gap-2 text-xs text-slate-400"><span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"/> WebSocket Realtime • CVE/CWE/OWASP/MITRE mapped</span>
+              <span className="hidden md:inline-flex items-center gap-2 text-xs text-slate-400"><span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"/> 121 Engines • WebSocket + Tune • FREE↔ENT</span>
             </div>
           </div>
         </div>
@@ -45,7 +46,7 @@ export default function Dashboard(){
         <Stat label="Total Scans" value={total} sub={`${completed} completed • ${running} live`} icon={<Radar size={14}/>}/>
         <Stat label="Critical Vulns" value={critical} sub="Across all scans" icon={<AlertTriangle size={14} className="text-red-400"/>}/>
         <Stat label="Graph Coverage" value={`${scans.length? '● Active': '○ Idle'}`} sub="Dijkstra weighted paths" icon={<Share2 size={14}/>}/>
-        <Stat label="Engine Status" value="v2.0" sub="FAIR + Monte Carlo" icon={<ShieldCheck size={14} className="text-emerald-400"/>}/>
+        <Stat label="Engine Status" value="v2.4 • 121" sub="Autonomous • FREE↔ENT" icon={<ShieldCheck size={14} className="text-emerald-400"/>}/>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-4">
