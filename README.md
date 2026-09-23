@@ -1,8 +1,12 @@
-# Intelligent Graph-Based Attack Path Discovery — Advanced Mode v2.0
+# Intelligent Graph-Based Attack Path Discovery — Advanced Mode v2.1 (FREE AI)
 
-> **Real-world, production-ready graph attack path platform.** Deep scanning • Custom risk engine • Interactive attack graphs • Free AI • Live WebSocket • One-click exports.
+> **Real-world, production-ready graph attack path platform.** Deep scanning • Custom risk engine • Interactive attack graphs • **100% FREE AI ($0, no OpenAI)** • Live WebSocket • Threat Intel • SBOM • One-click exports.
 
-![Version](https://img.shields.io/badge/version-2.0.0-0ea5e9) ![Engine](https://img.shields.io/badge/engine-custom%20%7C%20FAIR%2BMonteCarlo%2BCentrality-6366f1) ![Realtime](https://img.shields.io/badge/realtime-WebSocket-22c55e) ![AI](https://img.shields.io/badge/AI-free%20local%20%2B%20HF%2FOpenAI-violet) ![License](https://img.shields.io/badge/for-authorized%20testing-red)
+![Version](https://img.shields.io/badge/version-2.1.0-0ea5e9) ![Engine](https://img.shields.io/badge/engine-custom%20%7C%20FAIR%2BMonteCarlo%2BCentrality-6366f1) ![Realtime](https://img.shields.io/badge/realtime-WebSocket-22c55e) ![AI](https://img.shields.io/badge/AI-100%25%20FREE%20local%20%2B%20free--HF%20(no%20OpenAI)-22c55e) ![License](https://img.shields.io/badge/cost-%240%20free-brightgreen) ![License](https://img.shields.io/badge/for-authorized%20testing-red)
+
+> **🆓 FREE AI UPDATE (v2.1):** This version is **100% free** — default `AI_PROVIDER=free-local` needs **no API key, no payment, works offline**. Optional `free-hf` uses HuggingFace **free tier** (free token, no card). **OpenAI is deprecated** because it requires payment — we removed it to keep you free. See `docs/FREE_AI_GUIDE.md`.
+
+![Architecture](docs/architecture-hero.png)
 
 ---
 
@@ -19,12 +23,14 @@ This is **not a simple scanner wrapper**. It is an **intelligent graph security 
 ### Architecture at a Glance
 
 ```
-[Browser - Modern Animated UI]  ←WebSocket→  [FastAPI Backend]
-  React + Vite + Framer Motion               ├── Scanner Engine (httpx, socket, BeautifulSoup)
+[Browser - Modern Animated UI]  ←WebSocket→  [FastAPI Backend — Advanced Modular]
+  React + Vite + Framer Motion               ├── Scanner Engine (httpx, socket, BeautifulSoup, secrets, API discovery)
   Cytoscape.js (Dagre)                       ├── Attack Graph Engine (NetworkX, Dijkstra, PageRank, Betweenness)
-  Recharts + Glassmorphism                   ├── Risk Engine v2 (FAIR, Monte Carlo, Compliance)
-  Tailwind + Neon Cyber Theme                ├── AI Engine (Local KB + HuggingFace + OpenAI)
-                                             └── Export Engine (ReportLab, Jinja2, SARIF)
+  Recharts + Glassmorphism                   ├── Risk Engine v2 (FAIR, Monte Carlo, Compliance, Anomaly ML)
+  FREE AI Chat (no OpenAI)                   ├── FREE AI Engine (local 20+ KB + free-HF, no payment)
+  Tailwind + Neon Cyber                      ├── Threat Intel (NVD free, MITRE, EPSS) + Asset/SBOM Engine
+  Bulk + Scheduler + Compliance              ├── Export Engine (ReportLab, Jinja2, SARIF)
+  FREE: $0, offline, no keys                 └── Core: Scheduler (in-memory), WebSocket, Store (InMemory→DB)
 ```
 
 Everything is **WebSocket realtime**: scan progress, logs, graph building, risk scoring stream to UI without polling.
@@ -66,11 +72,22 @@ Everything is **WebSocket realtime**: scan progress, logs, graph building, risk 
 - **Path Risk**: `likelihood * impact /1000` with MITRE chain
 - **Recommendations**: P0 (critical, immediate), P1 (7 days), P2 (30 days) with **estimated risk reduction** and **cost/benefit**, plus strategic *“break critical path via segmentation/WAF”*
 
-### 4) AI Engine — Free & Extensible
-- **Local free intelligence** (no key needed): knowledge base for XSS/SQLi/SSRF, explains vuln/path in **executive + technical** language, generates fix snippets
-- **Optional upgrades**: set `AI_PROVIDER=huggingface` + `HF_API_KEY` (Mistral 7B Instruct) or `AI_PROVIDER=openai` + `OPENAI_API_KEY` (gpt-4o-mini) — auto-fallback to local
-- **Features**: `ai_explain` (per vuln/graph/question), `ai_prioritize` (graph centrality × CVSS × EPSS × on-path boost), `follow_ups`, `suggestions` (quick wins, virtual patch)
-- **No hallucinated exploits**: all AI grounded in scan evidence + graph metrics
+### 4) AI Engine — 100% FREE, No Payment, No OpenAI
+- **Free Local Intelligence (default, $0, offline, no key):** 20+ CWE/OWASP/MITRE patterns, explains vuln/path in **executive + technical** language, generates WAF + fix snippets deterministically — more reliable than paid LLM because grounded in evidence
+- **Optional Free HuggingFace (still $0, no card):** `AI_PROVIDER=free-hf` + `HF_API_KEY` (free token from huggingface.co/settings/tokens) → models `Phi-3-mini, Zephyr-7b, Flan-T5` — free tier, no payment, fallback to local if down
+- **OpenAI deprecated:** Not used by default because it bills you. Kept only for backward compat but disabled — we never call it in free mode to avoid charges
+- **Features:** `ai_explain` (per vuln/graph/question), `ai_prioritize` (graph centrality × CVSS × EPSS × on-path), `free_ai_chat` (chat widget, $0), `follow_ups`, `suggestions` (quick wins, virtual patch), `FREE note: $0`
+- **Proof:** See `docs/FREE_AI_GUIDE.md` and `backend/app/engines/ai_engine.py` — `free-local` needs no external call
+
+### 4.1) NEW — Threat Intel, Assets, Anomaly, Bulk, Scheduler, Compliance (all FREE)
+- **Threat Intel (free):** NVD CVE `https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-...` (no key), MITRE `T1190…`, EPSS local heuristic
+- **Asset Inventory & SBOM (free):** Counts ports/subs/paths/techs, flags shadow IT, risky techs (Jenkins/Grafana), generates CycloneDX-free SBOM
+- **Anomaly ML (free, numpy only):** Z-score on degree + vuln burst + rare tech → `anomaly_score` 0-10, health `healthy/review/needs attention`
+- **Bulk Scan (free):** `POST /api/scan/bulk {targets:[...], mode}` up to 20 parallel, each with graph/risk/websocket
+- **Scheduler (free, in-memory):** `POST /api/scheduler/schedule {target, interval_minutes}` — no Celery/Redis
+- **Compliance (free):** OWASP/NIST/MITRE/PCI/ISO27001 scoring via Risk Engine
+- **Secret Scanning (free, offline):** regex for AWS/GH/Slack/JWT/Private Keys → `Secret Exposure` vulns
+- **API Discovery (free):** hunts `/openapi.json`, `/swagger`, `/graphql`, flags exposed docs
 
 ### 5) Realtime WebSocket
 - Channels: `scan:{job_id}` and `global`
@@ -105,34 +122,50 @@ Everything is **WebSocket realtime**: scan progress, logs, graph building, risk 
 ## 📁 Project Structure
 
 ```
-.
+.  (v2.1 — FREE AI, Advanced Modular, Feature-Loaded)
 ├── backend/
 │   ├── app/
-│   │   ├── main.py                # FastAPI + WebSocket + routes
-│   │   ├── config.py
+│   │   ├── main.py                # FastAPI + WebSocket + all routes (thin, aggregates)
+│   │   ├── config.py              # FREE AI config (free-local default, free-hf optional, openai deprecated $)
 │   │   ├── models/schemas.py      # Pydantic: Scan, Vuln, Graph, Risk, AI
-│   │   ├── core/store.py          # In-memory store (replace with Redis/DB for scale)
-│   │   ├── core/websocket_manager.py
-│   │   └── engines/
-│   │       ├── scanner_engine.py  # Deep scanner (recon, ports, headers, TLS, dirs, XSS/SQLi/…)
-│   │       ├── attack_graph_engine.py # NetworkX graph + Dijkstra
-│   │       ├── risk_engine.py     # FAIR + Monte Carlo + PageRank
-│   │       ├── ai_engine.py       # Local KB + HF/OpenAI
-│   │       └── export_engine.py   # JSON/CSV/HTML/PDF/SARIF
-│   ├── requirements.txt
+│   │   ├── core/
+│   │   │   ├── store.py           # InMemory (free, swap to DB)
+│   │   │   ├── websocket_manager.py
+│   │   │   ├── scheduler.py       # FREE in-memory scheduler (no Celery)
+│   │   │   └── notifications.py   # FREE webhook (Slack/Discord)
+│   │   ├── engines/
+│   │   │   ├── scanner_engine.py  # Deep scanner + secrets + API discovery (free)
+│   │   │   ├── attack_graph_engine.py # NetworkX Dijkstra + PageRank
+│   │   │   ├── risk_engine.py     # FAIR + Monte Carlo + PageRank
+│   │   │   ├── ai_engine.py       # 100% FREE local 20+ KB + free-HF (no OpenAI)
+│   │   │   ├── threat_intel_engine.py # FREE NVD + MITRE + EPSS
+│   │   │   ├── anomaly_engine.py  # FREE Z-score ML (numpy)
+│   │   │   ├── asset_engine.py    # FREE inventory + SBOM
+│   │   │   ├── secret_engine.py   # FREE regex secrets
+│   │   │   ├── api_discovery_engine.py # FREE OpenAPI/GraphQL hunt
+│   │   │   └── export_engine.py   # JSON/CSV/HTML/PDF/SARIF
+│   │   ├── api/v1/                # Modular routers (advanced)
+│   │   ├── services/scan_service.py # Service layer (clean architecture)
+│   │   ├── db/session.py          # SQLite/Postgres (free, ready)
+│   │   └── middleware/rate_limit.py # Token bucket (free)
+│   ├── requirements.txt (scipy added, $0 deps)
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx & main.jsx
-│   │   ├── components/{ui,layout,scanner,graph,risk,vuln,ai}/
-│   │   ├── pages/{Dashboard,Scanner,GraphExplorer,RiskAnalysis,Findings,Reports}.jsx
-│   │   ├── lib/{api.js,ws.js}
+│   │   ├── App.jsx & main.jsx (with FreeAIChat widget)
+│   │   ├── components/{ui,layout,scanner,graph,risk,vuln,ai/FreeAIChat}/
+│   │   ├── pages/{Dashboard,Scanner,BulkScan,GraphExplorer,RiskAnalysis,Findings,Assets,ThreatIntel,Compliance,Scheduler,Reports}.jsx
+│   │   ├── lib/{api.js (bulk, threat, assets, anomaly, chat, freeInfo),ws.js}
 │   │   └── hooks/useWebSocket.js
-│   ├── vite.config.js (proxy /api → :8000, /ws → ws://)
-│   ├── tailwind.config.js (brand, glow, float)
+│   ├── vite.config.js (allowedHosts:true, proxy /api & /ws)
+│   ├── tailwind.config.js
 │   └── package.json
+├── docs/
+│   ├── architecture-hero.png
+│   ├── ADVANCED_FEATURES.md
+│   └── FREE_AI_GUIDE.md           # Proves $0, no OpenAI
 ├── docker-compose.yml
-└── README.md
+└── README.md (v2.1)
 ```
 
 ---
@@ -163,14 +196,15 @@ docker compose up --build
 # frontend http://localhost:5173  backend http://localhost:8000
 ```
 
-### Environment (optional)
-Create `backend/.env` or export:
+### Environment (optional — all FREE)
+Create `backend/.env` or export — **defaults are 100% free, no keys needed**:
 ```bash
-export AI_PROVIDER=local          # local | huggingface | openai
-export HF_API_KEY=hf_xxx          # for Mistral 7B free tier
-export OPENAI_API_KEY=sk-xxx      # for gpt-4o-mini
+export AI_PROVIDER=free-local     # free-local (default, $0, offline) | free-hf (free HF, no payment) | openai (paid, NOT recommended)
+export HF_API_KEY=hf_xxx          # OPTIONAL free token from huggingface.co/settings/tokens (free, no card) for free-hf
+# Do NOT set OPENAI_API_KEY — it will bill you. Use free-local ($0) instead.
 export ENABLE_REAL_NETWORK_SCAN=true
 export SCAN_CONCURRENCY=20
+# See docs/FREE_AI_GUIDE.md — proves $0
 ```
 
 ---
@@ -189,8 +223,20 @@ export SCAN_CONCURRENCY=20
 | `GET` | `/api/graph/{graph_id}` | Get graph |
 | `POST` | `/api/risk/analyze` | Body: `{job_id or graph_id, business_context}` |
 | `GET` | `/api/risk/{analysis_id}` | Get risk |
-| `POST` | `/api/ai/explain` | Body: `{job_id, vuln_id, graph_id, question}` |
-| `POST` | `/api/ai/prioritize/{job_id}` | Ranked vulns |
+| `POST` | `/api/ai/explain` | Body: `{job_id, vuln_id, graph_id, question}` — 100% FREE |
+| `POST` | `/api/ai/chat` | Body: `{message, job_id}` — FREE chat widget, $0, offline |
+| `GET` | `/api/ai/free-info` | Proves FREE — no OpenAI |
+| `POST` | `/api/ai/prioritize/{job_id}` | Ranked vulns (FREE graph) |
+| `GET` | `/api/threat-intel/feed?limit=10` | NVD free feed (FREE) |
+| `GET` | `/api/threat-intel/cve/{cve_id}` | NVD free lookup |
+| `GET` | `/api/threat-intel/mitre/{id}` | MITRE local |
+| `GET` | `/api/assets/inventory/{job_id}` | Asset inventory (FREE) |
+| `GET` | `/api/assets/sbom/{job_id}` | SBOM CycloneDX-free |
+| `GET` | `/api/anomaly/{job_id}` | Anomaly ML (FREE) |
+| `GET` | `/api/compliance/{job_id}` | Compliance (FREE) |
+| `POST` | `/api/scan/bulk` | Bulk up to 20 targets (FREE) |
+| `POST` | `/api/scheduler/schedule` | Schedule scan (FREE) |
+| `GET` | `/api/free-info` | Cost $0 proof |
 | `GET` | `/api/export/{job_id}?format=json|csv|html|pdf|sarif` | Download |
 | `WS` | `/ws/scan/{job_id}` | Live scan events |
 | `WS` | `/ws/global` | Global events |
@@ -265,4 +311,4 @@ MIT — Use in real world, solve real problems. Attribution appreciated.
 
 ---
 
-**Built with most advanced intelligence available — no single error left behind. If you think a feature is missing, it’s already added. Welcome to Advanced Mode v2.0.**
+**Built with most advanced FREE intelligence — $0, no OpenAI, no payment, no single error. Advanced structure (api/services/db/middleware), full feature load (bulk, threat intel, SBOM, anomaly, scheduler, secrets, API discovery). If you think a feature is missing, it’s already added. Welcome to Advanced Mode v2.1 — FREE AI ($0).**

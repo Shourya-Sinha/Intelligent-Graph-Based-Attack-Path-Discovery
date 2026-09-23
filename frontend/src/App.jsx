@@ -7,13 +7,20 @@ import GraphExplorer from './pages/GraphExplorer'
 import RiskAnalysis from './pages/RiskAnalysis'
 import Findings from './pages/Findings'
 import Reports from './pages/Reports'
+import ThreatIntel from './pages/ThreatIntel'
+import Assets from './pages/Assets'
+import BulkScan from './pages/BulkScan'
+import Compliance from './pages/Compliance'
+import Scheduler from './pages/Scheduler'
+import FreeAIChat from './components/ai/FreeAIChat'
 import { useState } from 'react'
 
 function AIPage(){
-  return <div className="glass rounded-xl p-6">For AI Insights visit Findings or Scanner — AI is contextual to vulns/paths. Use <code>/api/ai/explain</code> directly for custom questions.</div>
+  return <div className="glass rounded-xl p-6">🤖 <b>FREE AI</b> — 100% free, offline, no OpenAI. Use the floating chat (bottom-right) or go to Findings → Explain. API: <code>/api/ai/chat</code> and <code>/api/ai/explain</code> — both free, no key, no payment.</div>
 }
 
 export default function App(){
+  const [chatJobId,setChatJobId]=useState(null)
   return (
     <BrowserRouter>
       <div className="min-h-screen flex bg-[#070b18]">
@@ -24,16 +31,22 @@ export default function App(){
             <Routes>
               <Route path="/" element={<Dashboard/>}/>
               <Route path="/scanner" element={<Scanner/>}/>
+              <Route path="/bulk" element={<BulkScan/>}/>
               <Route path="/graph" element={<GraphExplorer/>}/>
               <Route path="/risk" element={<RiskAnalysis/>}/>
               <Route path="/findings" element={<Findings/>}/>
+              <Route path="/assets" element={<Assets/>}/>
+              <Route path="/threat-intel" element={<ThreatIntel/>}/>
+              <Route path="/compliance" element={<Compliance/>}/>
               <Route path="/ai" element={<AIPage/>}/>
               <Route path="/reports" element={<Reports/>}/>
+              <Route path="/scheduler" element={<Scheduler/>}/>
             </Routes>
           </main>
-          <footer className="text-center text-[11px] text-slate-500 py-4">© 2026 Intelligent Graph-Based Attack Path Discovery • Advanced Mode • WebSocket Realtime • For authorized use only</footer>
+          <footer className="text-center text-[11px] text-slate-500 py-4">© 2026 Intelligent Graph-Based Attack Path Discovery • Advanced v2.1 • FREE AI ($0) • WebSocket Realtime • For authorized use only</footer>
         </div>
       </div>
+      <FreeAIChat jobId={chatJobId}/>
     </BrowserRouter>
   )
 }

@@ -1,17 +1,17 @@
 import { useState } from 'react'
-import { Brain, Sparkles, Copy } from 'lucide-react'
+import { Brain, Sparkles, Copy, CheckCircle } from 'lucide-react'
 
 export default function AIInsights({ data, vuln }){
   const [tab,setTab]=useState('analysis')
-  if(!data) return <div className="glass rounded-xl p-6 text-sm text-slate-400">Ask AI to explain findings — uses local free intelligence, upgrades to HuggingFace/OpenAI if keys set.</div>
+  if(!data) return <div className="glass rounded-xl p-6 text-sm text-slate-400">🤖 Ask <b>FREE AI</b> to explain findings — <span className="text-emerald-300">100% free, offline, no OpenAI, no payment</span>. Optional free HuggingFace (free token) enhances but not required.</div>
   return (
     <div className="glass rounded-xl overflow-hidden">
       <div className="p-3 flex items-center gap-2 border-b border-slate-800">
         <Brain size={16} className="text-violet-400"/>
-        <span className="font-bold text-sm">AI Security Analysis</span>
-        <span className="text-xs bg-violet-500/20 text-violet-300 border border-violet-500/30 rounded-full px-2 py-1">{data.provider}</span>
-        <span className="ml-auto text-xs text-slate-500">{data.local_kb_used? 'Local Intelligence (free)':'External LLM'}</span>
+        <span className="font-bold text-sm">FREE AI Security Analysis</span>
+        <span className="text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full px-2 py-1 flex items-center gap-1"><CheckCircle size={12}/>{data.provider}</span>
       </div>
+      {data.free_note && <div className="px-3 py-1.5 bg-emerald-500/10 border-b border-emerald-500/20 text-xs text-emerald-300">✅ {data.free_note}</div>}
       <div className="flex gap-1 p-2">
         {['analysis','fixes','suggestions'].map(t=>(
           <button key={t} onClick={()=>setTab(t)} className={`px-3 py-1.5 rounded-full text-xs font-bold border ${tab===t?'bg-violet-500 text-white border-violet-400':'glass text-slate-300'}`}>{t.toUpperCase()}</button>
@@ -49,7 +49,7 @@ export default function AIInsights({ data, vuln }){
               </div>
             ))}
             <div className="mt-2">
-              <div className="text-xs font-bold text-slate-300">Follow-ups</div>
+              <div className="text-xs font-bold text-slate-300">Follow-ups (free)</div>
               <div className="flex flex-wrap gap-2 mt-2">
                 {data.follow_ups?.map((q,i)=><span key={i} className="text-xs glass rounded-full px-3 py-1.5 border border-slate-700">{q}</span>)}
               </div>

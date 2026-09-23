@@ -362,6 +362,30 @@ async def deep_scan_job(scan_req: ScanRequest, result: ScanResult):
             for v in hdr_vulns:
                 await emit(result.job_id, result.current_stage, 44, f"Finding: {v.title} [{v.severity}]")
 
+            # --- FREE Secret Scanning (offline, no API) ---
+            try:
+                from .secret_engine import scan_secrets
+                secret_vulns = scan_secrets(body + json.dumps(resp_headers), base_url)
+                if secret_vulns:
+                    result.vulnerabilities.extend(secret_vulns)
+                    for sv in secret_vulns:
+                        await emit(result.job_id, result.current_stage, 44, f"Secret Found: {sv.title}")
+                    result.findings.append(ScanFinding(category="secrets", key="secrets_found", value=len(secret_vulns), severity=Severity.HIGH))
+            except Exception as se:
+                await emit(result.job_id, result.current_stage, 44, f"Secret scan skipped: {se}")
+
+            # --- FREE API Discovery (OpenAPI/GraphQL) ---
+            try:
+                from .api_discovery_engine import discover_apis
+                api_res = await discover_apis(base_url, body, resp_headers)
+                if api_res["discovered"]:
+                    for av in api_res["vulns"]:
+                        result.vulnerabilities.append(av)
+                        await emit(result.job_id, result.current_stage, 44, f"API Exposure: {av.title} at {av.url}")
+                    result.findings.append(ScanFinding(category="api", key="apis_discovered", value=len(api_res["discovered"])))
+            except Exception as ae:
+                await emit(result.job_id, result.current_stage, 44, f"API discovery skipped: {ae}")
+
             # TLS
             result.current_stage = "TLS & Security Posture"
             await emit(result.job_id, result.current_stage, 45, "Analyzing TLS configuration ...")
