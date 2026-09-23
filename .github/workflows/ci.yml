@@ -1,0 +1,43 @@
+name: CI — Powerhouse 121 + Autonomous
+on:
+  push:
+    branches: [ "main", "arena/**" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install backend
+        run: |
+          pip install -r backend/requirements.txt
+          pip install pytest httpx
+      - name: Run backend tests (free, no keys)
+        run: |
+          pytest backend/tests -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend
+        run: |
+          cd frontend && npm install
+      - name: Build frontend (vite)
+        run: |
+          cd frontend && npm run build
+      - name: Check 121 engines present
+        run: |
+          grep -q "121" frontend/src/components/layout/Sidebar.jsx || (echo "121 not found" && exit 1)
+          grep -q "Autonomous" frontend/src/pages/Autonomous.jsx || (echo "Autonomous missing" && exit 1)

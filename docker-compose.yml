@@ -1,0 +1,55 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - AI_PROVIDER=free-local
+      - ENABLE_REAL_NETWORK_SCAN=true
+      - USE_PERSISTENCE=true
+      - STORE_DB_PATH=/app/reports/store.db
+      - SCAN_CONCURRENCY=20
+    volumes:
+      - ./backend:/app
+      - backend_reports:/app/reports
+    # dev override: --reload; prod uses Dockerfile CMD (workers 2)
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level info
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    ports:
+      - "5173:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    # vite handles /api & /ws proxy, allowedHosts:true
+    restart: unless-stopped
+
+  # prod nginx frontend (optional): docker compose --profile prod up
+  frontend-prod:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: prod
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    profiles: ["prod"]
+    restart: unless-stopped
+
+volumes:
+  backend_reports:
