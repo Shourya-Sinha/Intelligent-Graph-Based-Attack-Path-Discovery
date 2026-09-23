@@ -13,6 +13,7 @@ from .core.store import store
 from .core.websocket_manager import manager
 from .core.scheduler import scheduler
 from .core.notifications import notify_scan_completed
+from .core.autonomous_manager import get_config as get_auto_config, set_config as set_auto_config, should_auto_fix, should_auto_scan
 from .engines.scanner_engine import deep_scan_job
 from .engines.attack_graph_engine import build_attack_graph
 from .engines.risk_engine import run_risk_analysis
@@ -21,6 +22,8 @@ from .engines.enterprise_ai_engine import enterprise_ai_explain
 from .engines.enterprise_power_engine import calculate_power, get_enterprise_features
 from .engines.engine_registry import ENGINES, list_engines
 from .engines.power_control_engine import get_presets, get_global_config, set_global_config, describe_selection, effective_engines_for_job
+from .engines.auto_fix_engine import generate_all_fixes, autonomous_fixer
+from .engines.notification_engine import get_config as get_notif_config, set_config as set_notif_config, list_notifications, add_notification, notify_scan_completed_with_tune, mark_read, mark_all_read
 from .engines.export_engine import export_json, export_csv, export_html, export_pdf, export_sarif
 from .engines.threat_intel_engine import enrich_cve_free, get_recent_threat_feed, mitre_lookup, epss_free_score
 from .engines.anomaly_engine import combined_health
@@ -28,9 +31,9 @@ from .engines.asset_engine import build_inventory, sbom_free
 from .config import get_active_tier, is_enterprise_unlocked
 
 app = FastAPI(
-    title="Intelligent Graph-Based Attack Path Discovery - Powerhouse 45 Engines (FREE by default, PAID unlocks)",
-    version="2.3.0",
-    description="Powerhouse: 45 tick-selectable engines + presets + per-task power sliders + powerhouse powerhouse mode. Dual-mode FREE($0) vs ENTERPRISE(GPT-4o/Claude). Real-time graph, risk, threat intel, 0-100 power meter."
+    title="Intelligent Graph-Based Attack Path Discovery - Powerhouse 112 Engines + Autonomous (FREE by default, PAID unlocks)",
+    version="2.4.0",
+    description="Powerhouse: 112 tick-selectable engines + presets + per-task sliders + autonomous scan/fix + notifications with tune + 20 auto-fix engines. Every-time or scheduled scans, no problem left, admin notified with how_to_fix. Dual-mode FREE($0) vs ENTERPRISE(GPT-4o/Claude)."
 )
 
 app.add_middleware(
@@ -41,22 +44,64 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+autonomous_task = None
+async def autonomous_continuous_loop():
+    while True:
+        try:
+            cfg = get_auto_config()
+            if cfg.get("continuous") and cfg.get("auto_targets"):
+                for target in cfg["auto_targets"]:
+                    job_id = f"SCAN-{uuid.uuid4().hex[:8].upper()}"
+                    preset = cfg.get("power_preset","balanced")
+                    powerhouse = cfg.get("powerhouse", False)
+                    if cfg.get("use_100_engines"):
+                        powerhouse = True
+                    scan_req = ScanRequest(target=target, mode="advance", depth=2, power_preset=preset, powerhouse=powerhouse)
+                    result = ScanResult(job_id=job_id, target=target, mode="advance", status="queued", progress=0, current_stage="Queued [autonomous]")
+                    store.set_scan(job_id, {"request": scan_req, "result": result, "graph": None, "risk": None})
+                    asyncio.create_task(run_scan_task(job_id, scan_req))
+                    await manager.send_to_channel("global", {"type":"autonomous_scan_started","job_id":job_id,"target":target})
+            for job in scheduler.due_jobs():
+                job_id = f"SCAN-{uuid.uuid4().hex[:8].upper()}"
+                scan_req = ScanRequest(target=job["target"], mode=job.get("mode","advance"), depth=2)
+                result = ScanResult(job_id=job_id, target=job["target"], mode=job.get("mode","advance"), status="queued", progress=0, current_stage="Queued [scheduled]")
+                store.set_scan(job_id, {"request": scan_req, "result": result, "graph": None, "risk": None})
+                asyncio.create_task(run_scan_task(job_id, scan_req))
+                job["runs"] = job.get("runs",0)+1
+                job["last_scan_id"] = job_id
+                from datetime import timedelta
+                job["next_run"] = (datetime.utcnow() + timedelta(minutes=job["interval_minutes"])).isoformat()
+                await manager.send_to_channel("global", {"type":"scheduled_scan_started","job_id":job_id,"target":job["target"]})
+        except Exception as e:
+            print(f"Autonomous loop error: {e}")
+        cfg = get_auto_config()
+        wait = cfg.get("schedule_interval_minutes", 60) * 60
+        await asyncio.sleep(30)
+
+@app.on_event("startup")
+async def start_autonomous():
+    global autonomous_task
+    autonomous_task = asyncio.create_task(autonomous_continuous_loop())
+    print("Autonomous powerhouse loop started — 112 engines ready for every-time scans")
+
 @app.get("/")
 async def root():
     tier = get_active_tier()
     ent = is_enterprise_unlocked()
     cfg = get_global_config()
+    auto = get_auto_config()
     return {
         "service": "Intelligent Graph-Based Attack Path Discovery",
-        "version": "2.3.0 — Powerhouse 45 Engines",
+        "version": "2.4.0 — Powerhouse 112 Engines + Autonomous",
         "mode": "ENTERPRISE" if ent else "FREE (default, $0)",
         "tier": tier,
         "enterprise_unlocked": ent,
         "engines": len(ENGINES),
         "active_engines": len(cfg["selected"]),
         "preset": cfg["preset"],
-        "ai": "FREE by default (local, $0) — ENTERPRISE unlocks GPT-4o/Claude/Gemini if keys provided. See /api/power/* and /api/enterprise/power",
-        "features": ["45-engines","powerhouse","power-presets","per-task-sliders","deep-scan","graph-engine","risk-engine-v2","free-ai-chat","enterprise-ai","threat-intel-free","anomaly-ml-free","asset-inventory","bulk-scan","scheduler","compliance","cloud-posture","container","supply-chain","power-meter","websocket","export"],
+        "autonomous": auto,
+        "ai": "FREE by default (local, $0) — ENTERPRISE unlocks GPT-4o/Claude/Gemini if keys provided. See /api/power/*, /api/auto/*, /api/notifications",
+        "features": ["112-engines","autonomous","auto-fix-20","powerhouse","power-presets","per-task-sliders","continuous-monitor","schedule","tune-notifications","deep-scan","graph-engine","risk-engine-v2","free-ai-chat","enterprise-ai","threat-intel-free","anomaly-ml-free","asset-inventory","bulk-scan","scheduler","compliance","cloud-posture","container","supply-chain","power-meter","websocket","export"],
         "power": calculate_power(len(store.scans), len(cfg["selected"]))["total_power"],
         "status": "operational",
         "free": True,
@@ -206,12 +251,36 @@ async def run_scan_task(job_id: str, req: ScanRequest):
             except Exception as ge:
                 await manager.send_to_channel(f"scan:{job_id}", {"type":"graph_error", "error": str(ge)})
         store.set_scan(job_id, entry)
+        auto_cfg = get_auto_config()
+        auto_fix_result = None
+        if should_auto_fix() or auto_cfg.get("fix_mode")=="auto" or auto_cfg.get("continuous"):
+            try:
+                auto_fix_result = autonomous_fixer(result)
+                entry["auto_fixes"] = auto_fix_result
+                store.set_scan(job_id, entry)
+                for f in auto_fix_result["fixes"]:
+                    await manager.send_to_channel(f"scan:{job_id}", {"type":"autofix_generated","fix":f})
+                    await manager.send_to_channel("global", {"type":"autofix_generated","fix":f})
+            except Exception as e:
+                print(f"Auto-fix error: {e}")
         await manager.send_to_channel(f"scan:{job_id}", {"type":"scan_completed", "job_id": job_id, "summary": result.summary})
-        await manager.send_to_channel("global", {"type":"scan_completed_global", "job_id": job_id, "target": result.target})
+        await manager.send_to_channel("global", {"type":"scan_completed_global", "job_id": job_id, "target": result.target, "autonomous": auto_fix_result is not None})
+        try:
+            await notify_scan_completed_with_tune(result, auto_fix_result)
+            notifs = list_notifications(3)
+            for n in notifs[-1:]:
+                await manager.send_to_channel("global", {"type":"notification","notification":n,"tune": n.get("sound", True), "how_to_fix": n.get("how_to_fix")})
+        except Exception as ne:
+            print(f"Notify tune error: {ne}")
         await notify_scan_completed(result)
     except Exception as e:
         result.status = "failed"
         result.logs.append(str(e))
+        err_n = add_notification(title=f"💥 Scan Failed: {job_id}", message=str(e), severity="high", sound=True)
+        try:
+            await manager.send_to_channel("global", {"type":"notification","notification":err_n,"tune":True})
+        except:
+            pass
         await manager.send_to_channel(f"scan:{job_id}", {"type":"scan_failed", "error": str(e)})
 
 @app.get("/api/scan/{job_id}")
@@ -466,6 +535,135 @@ async def sched_delete(job_id: str):
     if not ok:
         raise HTTPException(404, "Not found")
     return {"deleted": True}
+
+class AutoConfigRequest(BaseModel):
+    mode: str | None = None
+    scan_mode: str | None = None
+    fix_mode: str | None = None
+    schedule_enabled: bool | None = None
+    schedule_interval_minutes: int | None = None
+    schedule_cron: str | None = None
+    continuous: bool | None = None
+    auto_targets: List[str] | None = None
+    notify_tune: bool | None = None
+    power_preset: str | None = None
+    powerhouse: bool | None = None
+    use_100_engines: bool | None = None
+
+@app.get("/api/auto/config")
+async def auto_config_get():
+    return {"config": get_auto_config(), "free": True, "engines": len(ENGINES), "tune": get_notif_config()}
+
+@app.post("/api/auto/config")
+async def auto_config_set(req: AutoConfigRequest):
+    cfg = set_auto_config(**{k:v for k,v in req.model_dump().items() if v is not None})
+    if req.power_preset:
+        set_global_config(preset=req.power_preset)
+    if req.powerhouse is not None:
+        set_global_config(powerhouse=req.powerhouse)
+    if req.use_100_engines:
+        set_global_config(powerhouse=True)
+        set_global_config(preset="turbo")
+    await manager.send_to_channel("global", {"type":"auto_config_changed","config":cfg})
+    add_notification(title="⚙️ Auto Mode Updated", message=f"Mode {cfg['mode']} — scan:{cfg['scan_mode']} fix:{cfg['fix_mode']} continuous:{cfg['continuous']} 112-engine powerhouse={'on' if cfg['use_100_engines'] else 'off'}", severity="info", sound=True)
+    await manager.send_to_channel("global", {"type":"notification","notification": list_notifications(1)[0] if list_notifications(1) else None, "tune": True})
+    return {"config": cfg, "power": get_global_config(), "free": True}
+
+@app.post("/api/auto/enable-continuous")
+async def auto_enable_continuous(targets: List[str], interval_minutes: int = 15):
+    from .core.autonomous_manager import enable_continuous
+    new_cfg = enable_continuous(targets, interval_minutes)
+    await manager.send_to_channel("global", {"type":"autonomous_enabled","config":new_cfg})
+    add_notification(title="🔁 Continuous Monitor Enabled", message=f"Every {interval_minutes}m scans for {', '.join(targets)} with 112 engines + auto-fix + tune", severity="high", sound=True)
+    return {"config": new_cfg, "free": True, "message": f"Continuous scans every {interval_minutes}m for {len(targets)} targets — no problem leaves unnotified"}
+
+@app.post("/api/auto/disable")
+async def auto_disable():
+    from .core.autonomous_manager import disable_continuous
+    cfg = disable_continuous()
+    add_notification(title="⏸️ Autonomous Disabled", message="Continuous monitor off — manual mode", severity="info", sound=False)
+    return {"config": cfg, "free": True}
+
+@app.get("/api/notifications")
+async def notifications_list(limit: int = 50):
+    return {"notifications": list_notifications(limit), "config": get_notif_config(), "free": True}
+
+@app.get("/api/notifications/config")
+async def notif_config_get():
+    return get_notif_config()
+
+class NotifConfigRequest(BaseModel):
+    tune: bool | None = None
+    browser: bool | None = None
+    webhook_url: str | None = None
+    slack_url: str | None = None
+    discord_url: str | None = None
+    email: str | None = None
+    sound_volume: float | None = None
+
+@app.post("/api/notifications/config")
+async def notif_config_set(req: NotifConfigRequest):
+    cfg = set_notif_config(**{k:v for k,v in req.model_dump().items() if v is not None})
+    return cfg
+
+@app.post("/api/notifications/read/{nid}")
+async def notif_read(nid: str):
+    ok = mark_read(nid)
+    return {"ok": ok}
+
+@app.post("/api/notifications/read-all")
+async def notif_read_all():
+    c = mark_all_read()
+    return {"marked": c}
+
+@app.post("/api/notifications/test")
+async def notif_test():
+    n = add_notification(title="🔔 Test Notification — Tune!", message="If you hear tune and see this, notifications work. Next bug will also play tune and show how to remove.", severity="high", how_to_fix="1. Check fix tab → copy patch → apply → test via curl → re-scan. Autonomous mode does this automatically.", sound=True)
+    await manager.send_to_channel("global", {"type":"notification","notification": n, "tune": True, "how_to_fix": n["how_to_fix"]})
+    return n
+
+@app.get("/api/fix/{job_id}")
+async def fix_list(job_id: str):
+    entry = store.get_scan(job_id)
+    if not entry:
+        raise HTTPException(404, "Scan not found")
+    scan = entry["result"]
+    auto_cfg = get_auto_config()
+    is_auto = auto_cfg["fix_mode"]=="auto" or auto_cfg["continuous"]
+    fixes = generate_all_fixes(scan, autonomous=is_auto)
+    return {"job_id": job_id, "fixes": fixes, "count": len(fixes), "autonomous": is_auto, "mode": auto_cfg["fix_mode"], "free": True}
+
+@app.post("/api/fix/{job_id}/apply")
+async def fix_apply(job_id: str, fix_id: str | None = None):
+    entry = store.get_scan(job_id)
+    if not entry:
+        raise HTTPException(404, "Scan not found")
+    scan = entry["result"]
+    auto_cfg = get_auto_config()
+    fixes = generate_all_fixes(scan, autonomous=(auto_cfg["fix_mode"]=="auto"))
+    if fix_id:
+        fixes = [f for f in fixes if f["vuln_id"]==fix_id]
+        if not fixes:
+            raise HTTPException(404, "Fix not found")
+    for f in fixes:
+        f["status"]="applied"
+        f["applied_at"]=datetime.utcnow().isoformat()
+        n = add_notification(title=f"✅ Fixed: {f['vuln_title']}", message=f"Patch applied for {f['vuln_title']} via {f['engine_id']} — verify: {f['test']}", severity="info", how_to_fix=f["how_to_remove"], sound=True)
+        await manager.send_to_channel("global", {"type":"notification","notification":n,"tune":True})
+        await manager.send_to_channel(f"scan:{job_id}", {"type":"fix_applied","fix":f})
+    return {"applied": len(fixes), "fixes": fixes, "free": True}
+
+@app.post("/api/fix/{job_id}/autonomous")
+async def fix_autonomous(job_id: str):
+    entry = store.get_scan(job_id)
+    if not entry:
+        raise HTTPException(404, "Scan not found")
+    scan = entry["result"]
+    res = autonomous_fixer(scan)
+    for f in res["fixes"]:
+        n = add_notification(title=f"🤖 Autonomous Fixed: {f['vuln_title']}", message=f["notification"], severity="info", how_to_fix=f["how_to_remove"], sound=True)
+        await manager.send_to_channel("global", {"type":"notification","notification":n,"tune":True})
+    return res
 
 @app.get("/api/compliance/{job_id}")
 async def compliance_report(job_id: str):

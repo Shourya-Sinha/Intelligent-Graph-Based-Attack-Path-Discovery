@@ -14,6 +14,7 @@ import Compliance from './pages/Compliance'
 import Scheduler from './pages/Scheduler'
 import EnterprisePower from './pages/EnterprisePower'
 import PowerControl from './pages/PowerControl'
+import Autonomous from './pages/Autonomous'
 import FreeAIChat from './components/ai/FreeAIChat'
 import { useState } from 'react'
 
@@ -44,10 +45,11 @@ export default function App(){
               <Route path="/reports" element={<Reports/>}/>
               <Route path="/scheduler" element={<Scheduler/>}/>
               <Route path="/power" element={<PowerControl/>}/>
+              <Route path="/autonomous" element={<Autonomous/>}/>
               <Route path="/enterprise" element={<EnterprisePower/>}/>
             </Routes>
           </main>
-          <footer className="text-center text-[11px] text-slate-500 py-4">© 2026 Intelligent Graph-Based Attack Path Discovery • Powerhouse v2.3 — 45 Engines • FREE↔ENTERPRISE • Powerhouse Control 0-100 • WebSocket Realtime</footer>
+          <footer className="text-center text-[11px] text-slate-500 py-4">© 2026 Intelligent Graph-Based Attack Path Discovery • Powerhouse v2.4 — 112 Engines + Autonomous • FREE↔ENTERPRISE • Powerhouse Control 0-100 • WebSocket Realtime + Tune</footer>
         </div>
       </div>
       <FreeAIChat jobId={chatJobId}/>

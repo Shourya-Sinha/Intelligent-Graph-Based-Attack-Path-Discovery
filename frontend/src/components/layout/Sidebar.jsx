@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Radar, Share2, ShieldAlert, FileBarChart, Brain, Zap, Globe, Layers, Package, Clock, ShieldCheck, Crown, Sliders } from 'lucide-react'
+import { LayoutDashboard, Radar, Share2, ShieldAlert, FileBarChart, Brain, Zap, Globe, Layers, Package, Clock, ShieldCheck, Crown, Sliders, Bot } from 'lucide-react'
 
 const items = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -15,6 +15,7 @@ const items = [
   { to: "/reports", label: "Reports & Export", icon: FileBarChart },
   { to: "/scheduler", label: "Scheduler", icon: Clock },
   { to: "/power", label: "Powerhouse Control", icon: Sliders },
+  { to: "/autonomous", label: "Autonomous (BOT)", icon: Bot },
   { to: "/enterprise", label: "Enterprise Power", icon: Crown },
 ]
 
@@ -25,7 +26,7 @@ export default function Sidebar(){
         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-400 to-indigo-600 grid place-items-center font-black">AG</div>
         <div>
           <div className="font-extrabold leading-none">AttackGraph</div>
-          <div className="text-[11px] tracking-widest text-slate-400">POWERHOUSE 45 • FREE↔ENT</div>
+          <div className="text-[11px] tracking-widest text-slate-400">POWERHOUSE 112 • AUTONOMOUS</div>
         </div>
         <div className="ml-auto w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
       </div>
@@ -40,8 +41,12 @@ export default function Sidebar(){
           <div className="text-xs text-slate-300 mt-1">No keys = $0 offline local + Cloud/Container/SBOM. 100% free.</div>
         </div>
         <div className="mt-2 p-3 rounded-xl bg-gradient-to-br from-sky-500/15 to-violet-500/15 border border-sky-500/20">
-          <div className="text-xs font-bold flex items-center gap-2"><Sliders size={14} className="text-sky-400"/> Powerhouse 45 Engines</div>
-          <div className="text-xs text-slate-300 mt-1">Tick engines, presets Eco→Overdrive, per-task 0-100 sliders. More engines = more power.</div>
+          <div className="text-xs font-bold flex items-center gap-2"><Sliders size={14} className="text-sky-400"/> Powerhouse 112 Engines</div>
+          <div className="text-xs text-slate-300 mt-1">112 selectable, presets Eco→Overdrive, per-task 0-100 sliders. More engines = more power.</div>
+        </div>
+        <div className="mt-2 p-3 rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 border border-violet-500/20">
+          <div className="text-xs font-bold flex items-center gap-2"><Bot size={14} className="text-violet-400"/> Autonomous BOT</div>
+          <div className="text-xs text-slate-300 mt-1">Auto vs Manual per task: scan every time or at schedule, auto-fixes, tune notifies admin.</div>
         </div>
         <div className="mt-2 p-3 rounded-xl bg-gradient-to-br from-amber-500/15 to-violet-500/15 border border-amber-500/20">
           <div className="text-xs font-bold flex items-center gap-2"><Crown size={14} className="text-amber-400"/> Enterprise Overdrive</div>
